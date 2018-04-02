@@ -1,0 +1,193 @@
+SELECT 
+      MPV.ORGANIZATION_CODE                                         "Organization Code",
+      IT.NAME                                                       "Item Master Org",
+      MPV.CALENDAR_CODE                                             "Calender",
+      MPV.PROCESS_ORGN_CODE                                         "Process Organization",
+      FCL.MEANING                                                   "Demand Class",
+      MPV.TXN_APPROVAL_TIMEOUT_PERIOD                               "Move Time Out Per..",
+      DECODE(MPV.MO_APPROVAL_TIMEOUT_ACTION,'1','Approve automatically','2','Reject automatically')  "Move Time Out Act..",
+      MPV.STOCK_LOCATOR_CONTROL_CODE                                "Locator Control",
+      DECODE(MPV.ENFORCE_LOCATOR_ALIS_UNQ_FLAG,'Y','Yes','N','No')  "Enforce Locator",
+      DECODE(MPV.QA_SKIPPING_INSP_FLAG,'Y','Yes','N','No')          "Quality Skipping", 
+      DECODE(MPV.NEGATIVE_INV_RECEIPT_CODE,'Y','Yes','N','No')      "Allow Negative..",
+      DECODE(MPV.AUTO_DEL_ALLOC_FLAG,'Y','Yes','N','No')            "Auto Delete All..",
+      DECODE(MPV.TRADING_PARTNER_ORG_FLAG,'Y','Yes','N','No')       "Manfacturing Part..",
+      DECODE(MPV.EAM_ENABLED_FLAG,'Y','Yes','N','No')               "EAM Enabled",
+      DECODE(MPV.PROCESS_ENABLED_FLAG,'Y','Yes','N','No')           "Process Manf..",
+      DECODE(MPV.WMS_ENABLED_FLAG,'Y','Yes','N','No')               "WMS Enabled",
+      DECODE(MPV.WCS_ENABLED,'Y','Yes','N','No')                    "WCS Enableed",
+      DECODE(MPV.LCM_ENABLED_FLAG,'Y','Yes','N','No')               "LCM Enabled",
+      (OOD.ORGANIZATION_CODE||','||OOD.ORGANIZATION_NAME)            "EAM Organization",
+      MPV.ORG_MAX_WEIGHT                                            "Load Weight",
+      MPV.ORG_MAX_WEIGHT_UOM_CODE                                   "Weight UOM",
+      MPV.ORG_MAX_VOLUME                                            "Volume",
+      MPV.ORG_MAX_VOLUME_UOM_CODE                                   "Volume UOM",
+      OOD.ORGANIZATION_NAME                                         "Costing Organization",
+      L1.MEANING                                                    "Costing Method",
+      ---CCT.COST_TYPE                                                 "Rates Cost Type"
+      DECODE(MPV.GENERAL_LEDGER_UPDATE_CODE,'1','Yes','3','No')     "Transfer to GL",
+      L2.MEANING                                                    "Reverse Encumbrance",
+      L3.MEANING                                                    "Project Cost Collect..",
+      L4.MEANING                                                    "Defer Logical Trans..",
+      TO_CHAR(MPV.COST_CUTOFF_DATE,'DD-MON-YYYY')                    "Cost Cutoff Date",
+      BR.RESOURCE_CODE                                               "Default Material Sub..",
+      MPV.MATL_OVHD_ABSORPTION_ACCT                                  "Material Overhead Sub..",
+      CST.COST_GROUP                                                 "Default Cost Group",
+      GCCK.CONCATENATED_SEGMENTS                                     "Material",
+      GCCK2.CONCATENATED_SEGMENTS                                    "Outside Processing",
+      GCCK3.CONCATENATED_SEGMENTS                                    "Material Overhead",
+      GCCK4.CONCATENATED_SEGMENTS                                    "Overhead",
+      GCCK5.CONCATENATED_SEGMENTS                                    "Resource",
+      GCCK6.CONCATENATED_SEGMENTS                                    "Expense",
+      MPV.STARTING_REVISION                                          "Starting Revision",
+      MPV.LOT_NUMBER_UNIQUENESS                                      "Lot Num Uniqueness",
+      L5.MEANING                                                     "Generation",
+      L6.MEANING                                                     "Zero Pad Suffix",
+      MPV.AUTO_LOT_ALPHA_PREFIX                                      "Prefix",
+      MPV.LOT_NUMBER_LENGTH                                          "Total Length",
+      FLV.MEANING                                                    "Child Generation",
+      DECODE(MPV.CHILD_LOT_ZERO_PADDING_FLAG,'Y','Yes','N','No')     "Zero Pad",
+      MPV.CHILD_LOT_ALPHA_PREFIX                                     "Prefix",
+      MPV.CHILD_LOT_NUMBER_LENGTH                                    "Total Length", 
+      DECODE(MPV.CHILD_LOT_VALIDATION_FLAG,'Y','Yes','N','No')       "Format Validation",
+      DECODE(MPV.COPY_LOT_ATTRIBUTE_FLAG,'Y','Yes','N','No')         "Copy Lot Attributes", 
+      DECODE(MPV.CREATE_LOT_UOM_CONVERSION,'Y','Yes','N','No','null') "Auto Create Lot..",
+      MPV.ALLOW_DIFFERENT_STATUS                                      "Allow Different Mat..",
+      MPV.SERIAL_NUMBER_TYPE                                          "Uniqueness",
+      L7.MEANING                                                      "Generation",
+      MPV.AUTO_SERIAL_ALPHA_PREFIX                                   "Prefix", 
+      MPV.START_AUTO_SERIAL_NUMBER                                   "Starting serial Num",
+      DECODE(MPV.ALLOCATE_SERIAL_FLAG,'Y','Yes','N','No')            "Allocate Serial Num..",
+      MPV.TOTAL_LPN_LENGTH                                           "Total Length",
+      MPV.LPN_STARTING_NUMBER                                        "Starting LPN Num..",
+      MPV.LPN_PREFIX                                                 "Prefix",
+      MPV.LPN_SUFFIX                                                 "Suffix",
+      DECODE(MPV.UCC_128_SUFFIX_FLAG,'Y','Yes','N','No')             "UCC_128 Suffix",
+      MAR.RULE_NAME                                                  "Rule",
+      WRV.NAME                                                       "Picking Rule",
+      MPV.DEFAULT_SUBINV_ORDER_VALUE                                "Subinventory Order",
+      MPV.DEFAULT_LOCATOR_ORDER_VALUE                               "Locator Order",
+      L8.MEANING                                                    "Pick Confirmation Req..",
+      DECODE(MPV.WIP_OVERPICK_ENABLED,'Y','Yes','N','No')           "Overpicking For Man..",
+      DECODE(MPV.OVPK_TRANSFER_ORDERS_ENABLED,'Y','Yes','N','No')   "Overpicking For Trans..",
+      DECODE(MPV.RULES_OVERRIDE_LOT_RESERVATION,'Y','Yes','N','No')  "Enable Rules..",
+      L9.MEANING                                                    "Type",
+      MP.SOURCE_ORGANIZATION_NAME                                  "Organization",
+      MPV.SOURCE_SUBINVENTORY                                       "Subinventory",
+      DECODE(MPV.DISTRIBUTED_ORGANIZATION_FLAG,'Y','Yes','N','No')  "Distributed Org",
+      DECODE(MPV.CARRIER_MANIFESTING_FLAG,'Y','Yes','N','No')       "Carrier Manifesting Org",
+      DECODE(MPV.MATL_INTERORG_TRANSFER_CODE,'1','None','2','Requested Value','3','Requested Percent','4','Predefined Pewrcent')   "InterOrg Transfer Charge", 
+      MPV.INTERORG_TRNSFR_CHARGE_PERCENT                            "%",
+      GCCK7.CONCATENATED_SEGMENTS                                   "Transfer Credit",
+      GCCK8.CONCATENATED_SEGMENTS                                   "Purchase Price Variance",
+      GCCK9.CONCATENATED_SEGMENTS                                   "Receivable",
+      GCCK10.CONCATENATED_SEGMENTS                                  "Payable",
+      GCCK11.CONCATENATED_SEGMENTS                                  "Intransit Inventory",
+      GCCK12.CONCATENATED_SEGMENTS                                  "Purchase Price Variance", 
+      GCCK13.CONCATENATED_SEGMENTS                                  "Invoice Price Variance",
+      GCCK14.CONCATENATED_SEGMENTS                                  "Inventory AP Accrual",
+      (MPV.ATTRIBUTE_CATEGORY||' '||MPV.ATTRIBUTE1)                 "Encumbrance",
+      GCCK16.CONCATENATED_SEGMENTS                                  "Sales",
+      GCCK17.CONCATENATED_SEGMENTS                                  "Cost of Goods Sold",
+      GCCK18.CONCATENATED_SEGMENTS                                  "Project Clearance Account",
+      GCCK19.CONCATENATED_SEGMENTS                                  "Deferred COGS Account",
+      (MPV.ATTRIBUTE2||' '||MPV.ATTRIBUTE3)                         "LCM Variance Account",
+      (MPV.ATTRIBUTE4||' '||MPV.ATTRIBUTE5)                         "On-Hand Adj Acc..",
+      (MPV.ATTRIBUTE_CATEGORY||' '||MPV.ATTRIBUTE1||' '||MPV.ATTRIBUTE2||' '||MPV.ATTRIBUTE3||' '||MPV.ATTRIBUTE4||' '||MPV.ATTRIBUTE5||' '||MPV.ATTRIBUTE6||' '||MPV.ATTRIBUTE7||' '||MPV.ATTRIBUTE8||' '||MPV.ATTRIBUTE9
+      ||' '||MPV.ATTRIBUTE10||' '||MPV.ATTRIBUTE11||' '||MPV.ATTRIBUTE12||' '||MPV.ATTRIBUTE13||' '||MPV.ATTRIBUTE14||' '||MPV.ATTRIBUTE15)  "Flex Field"
+FROM 
+      MTL_PARAMETERS                MPV,
+      MTL_PARAMETERS_VIEW           MP,
+      HR_ALL_ORGANIZATION_UNITS     I,
+      HR_ALL_ORGANIZATION_UNITS_TL  IT,
+      FND_COMMON_LOOKUPS            FCL,
+      ORG_ORGANIZATION_DEFINITIONS  OOD,
+      CST_COST_GROUPS               CST,
+      MFG_LOOKUPS                   L1,
+      MFG_LOOKUPS                   L2,
+      MFG_LOOKUPS                   L3,
+      MFG_LOOKUPS                   L4,
+      MFG_LOOKUPS                   L5,
+      MFG_LOOKUPS                   L6,
+      MFG_LOOKUPS                   L7,
+      MFG_LOOKUPS                   L8,
+      MFG_LOOKUPS                   L9,
+    --CST_COST_TYPES  CCT
+      BOM_RESOURCES                 BR,
+      GL_CODE_COMBINATIONS_KFV      GCCK,
+      GL_CODE_COMBINATIONS_KFV      GCCK2,
+      GL_CODE_COMBINATIONS_KFV      GCCK3,
+      GL_CODE_COMBINATIONS_KFV      GCCK4,
+      GL_CODE_COMBINATIONS_KFV      GCCK5,
+      GL_CODE_COMBINATIONS_KFV      GCCK6,
+      GL_CODE_COMBINATIONS_KFV      GCCK7,
+      GL_CODE_COMBINATIONS_KFV      GCCK8,
+      GL_CODE_COMBINATIONS_KFV      GCCK9,
+      GL_CODE_COMBINATIONS_KFV      GCCK10,
+      GL_CODE_COMBINATIONS_KFV      GCCK11,
+      GL_CODE_COMBINATIONS_KFV      GCCK12,
+      GL_CODE_COMBINATIONS_KFV      GCCK13,
+      GL_CODE_COMBINATIONS_KFV      GCCK14,
+      GL_CODE_COMBINATIONS_KFV      GCCK16,
+      GL_CODE_COMBINATIONS_KFV      GCCK17,
+      GL_CODE_COMBINATIONS_KFV      GCCK18,
+      GL_CODE_COMBINATIONS_KFV      GCCK19,
+      FND_LOOKUP_VALUES             FLV,
+      MTL_ATP_RULES                 MAR,
+      WMS_RULES_VL                  WRV
+WHERE
+      MPV.ORGANIZATION_ID             = NVL(5703, MPV.ORGANIZATION_ID)
+      AND MPV.ORGANIZATION_ID         = MP.ORGANIZATION_ID
+      AND I.ORGANIZATION_ID           = MPV.MASTER_ORGANIZATION_ID
+      AND I.ORGANIZATION_ID           = IT.ORGANIZATION_ID
+      AND IT.LANGUAGE                 = USERENV('LANG')
+      AND FCL.APPLICATION_ID (+)      = 700
+      AND FCL.LOOKUP_CODE(+)          = MPV.DEFAULT_DEMAND_CLASS
+      AND FCL.LOOKUP_TYPE(+)          ='DEMAND_CLASS'
+      AND OOD.ORGANIZATION_ID         = MPV.ORGANIZATION_ID
+      AND L1.LOOKUP_CODE              = MPV.PRIMARY_COST_METHOD
+      AND L1.LOOKUP_TYPE              = 'MTL_PRIMARY_COST'
+      AND L2.LOOKUP_CODE              = MPV.ENCUMBRANCE_REVERSAL_FLAG
+      AND L2.LOOKUP_TYPE              = 'SYS_YES_NO'
+      AND L3.LOOKUP_CODE(+)           = MPV.PM_COST_COLLECTION_ENABLED  
+      AND L3.LOOKUP_TYPE              = 'SYS_YES_NO'
+      AND L4.LOOKUP_CODE(+)           = MPV.DEFER_LOGICAL_TRANSACTIONS  
+      AND L4.LOOKUP_TYPE(+)           = 'SYS_YES_NO'
+      AND BR.RESOURCE_ID (+)          = MPV.DEFAULT_MATERIAL_COST_ID
+      AND MPV.DEFAULT_COST_GROUP_ID   = CST.COST_GROUP_ID(+)
+      AND GCCK.CODE_COMBINATION_ID    = MPV.MATERIAL_ACCOUNT
+      AND GCCK2.CODE_COMBINATION_ID   = MPV.OUTSIDE_PROCESSING_ACCOUNT
+      AND GCCK3.CODE_COMBINATION_ID   = MPV.MATERIAL_OVERHEAD_ACCOUNT
+      AND GCCK4.CODE_COMBINATION_ID   = MPV.OVERHEAD_ACCOUNT
+      AND GCCK5.CODE_COMBINATION_ID   = MPV.RESOURCE_ACCOUNT
+      AND GCCK6.CODE_COMBINATION_ID   = MPV.EXPENSE_ACCOUNT
+      AND GCCK7.CODE_COMBINATION_ID   = MPV.INTERORG_TRANSFER_CR_ACCOUNT
+      AND GCCK8.CODE_COMBINATION_ID   = MPV.INTERORG_PRICE_VAR_ACCOUNT
+      AND GCCK9.CODE_COMBINATION_ID   = MPV.INTERORG_RECEIVABLES_ACCOUNT
+      AND GCCK10.CODE_COMBINATION_ID  = MPV.INTERORG_PAYABLES_ACCOUNT
+      AND GCCK11.CODE_COMBINATION_ID  = MPV.INTRANSIT_INV_ACCOUNT
+      AND GCCK12.CODE_COMBINATION_ID  = MPV.INTERORG_PRICE_VAR_ACCOUNT
+      AND GCCK13.CODE_COMBINATION_ID  = MPV.INVOICE_PRICE_VAR_ACCOUNT
+      AND GCCK14.CODE_COMBINATION_ID  = MPV.AP_ACCRUAL_ACCOUNT
+      AND GCCK16.CODE_COMBINATION_ID  = MPV.SALES_ACCOUNT
+      AND GCCK17.CODE_COMBINATION_ID  = MPV.COST_OF_SALES_ACCOUNT
+      AND GCCK18.CODE_COMBINATION_ID  = MPV.PROJECT_COST_ACCOUNT
+      AND GCCK19.CODE_COMBINATION_ID  = MPV.DEFERRED_COGS_ACCOUNT
+      AND L5.LOOKUP_CODE              = MPV.LOT_NUMBER_GENERATION
+      AND L5.LOOKUP_TYPE              = 'MTL_SERIAL_GENERATION'
+      AND L6.LOOKUP_CODE(+)           = MPV.LOT_NUMBER_ZERO_PADDING  
+      AND L6.LOOKUP_TYPE              = 'SYS_YES_NO'
+      AND FLV.LOOKUP_CODE(+)          = MPV.PARENT_CHILD_GENERATION_FLAG
+      AND FLV.LOOKUP_TYPE(+)          = 'INV_PARENT_CHILD_GENERATION'
+      AND FLV.LANGUAGE(+)             =   USERENV('LANG')
+      AND L7.LOOKUP_CODE              = MPV.SERIAL_NUMBER_GENERATION
+      AND L7.LOOKUP_TYPE              = 'MTL_SERIAL_GENERATION'
+      AND MAR.RULE_ID(+)              =  MPV.DEFAULT_ATP_RULE_ID
+      AND WRV.RULE_ID (+)             = MPV.DEFAULT_PICKING_RULE_ID
+      AND L8.LOOKUP_CODE              = MPV.MO_PICK_CONFIRM_REQUIRED
+      AND L8.LOOKUP_TYPE              = 'SYS_YES_NO'
+      AND L9.LOOKUP_TYPE (+)          = 'MTL_SOURCE_TYPES'
+      AND L9.LOOKUP_CODE (+)          = MP.SOURCE_TYPE
+         
+      ;
+

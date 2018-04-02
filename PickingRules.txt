@@ -1,0 +1,82 @@
+SELECT 
+    WRV.NAME                                                "Name",
+    WRV.DESCRIPTION                                         "Description",
+    DECODE(WRV.ENABLED_FLAG,'Y','Yes','N','No')             "Enabled",
+    L1.MEANING                                              "Applicable To",  
+    MIPR.SHELF_DAYS                                         "Shelf Life Days",
+    DECODE(MIPR.SINGLE_LOT,'Y','Yes','N','No')              "Single Lot Allocation",
+    DECODE(MIPR.PARTIAL_ALLOWED_FLAG,'Y','Yes','N','No')    "Partial Allocation",
+    DECODE(MIPR.CUST_SPEC_MATCH_FLAG,'Y','Yes','N','No')    "Customer Spec Match",
+    L2.MEANING                                              "Lot",
+    MIPR.LOT_SORT_RANK                                      "Rank",
+    L3.MEANING                                              "Revision",
+    MIPR.REVISION_SORT_RANK                                 "Rank",
+    L4.MEANING                                              "Subinventory",
+    MIPR.SUBINVENTORY_SORT_RANK                             "Rank",
+    L5.MEANING                                              "Locator",
+    MIPR.LOCATOR_SORT_RANK                                  "Rank",
+    WSCT.SEQUENCE_NUMBER                                    "Sequence Number",
+    L6.MEANING                                              "Return Type",
+    WSCT.RETURN_TYPE_NAME                                   "Return Value",
+    WSCT.FROM_ORGANIZATION_CODE                             "Org",
+    WSCT.CUSTOMER_NAME                                      "Customer",
+    WSCT.ITEM                                               "Item",
+    WSCT.ITEM_TYPE                                          "Item Category",
+    WSCT.ITEM_TYPE_NAME                                     "Item Type",                          
+    WSCT.ABC_GROUP_CLASS_NAME                               "Assignment Group",
+    WSCT.FROM_SUBINVENTORY_NAME                             "Source Subinv",
+    WSCT.VENDOR_NAME                                        "Supplier",
+    WSCT.order_type_name                                    "Order Type",
+    WSCT.FREIGHT_CODE_NAME                                  "Freight Code",
+    WSCT.PROJECT_NAME                                       "Project",
+    WSCT.TASK_NAME                                          "Task",
+    WSCT.USER_NAME                                          "User",
+    WSCT.UNIT_OF_MEASURE                                    "UOM",
+    WSCT.TRANSACTION_ACTION_NAME                            "Transaction Action",
+    WSCT.TO_SUBINVENTORY_NAME                               "Destination Subinventory",
+    WSCT.REASON_NAME                                        "Transaction Reason",
+    WSCT.TRANSACTION_SOURCE_TYPE_NAME                       "Transaction Source",
+    WSCT.TRANSACTION_TYPE_NAME                              "Transaction Type",
+    WSCT.UOM_CLASS_NAME                                     "UOM Class",
+    L7.MEANING                                              "Date Type",                                     
+    WSCT.DATE_TYPE_FROM                                     "From Date",
+    WSCT.DATE_TYPE_TO                                       "To Date"
+FROM
+      MTL_INV_PICKING_RULES  MIPR,
+      WMS_RULES_VL           WRV,
+      FND_LOOKUP_VALUES      L1,
+      FND_LOOKUP_VALUES      L2,
+      FND_LOOKUP_VALUES      L3,
+      FND_LOOKUP_VALUES      L4,
+      FND_LOOKUP_VALUES      L5,
+      FND_LOOKUP_VALUES      L7,
+      WMS_SELECTION_CRITERIA_TXN_V WSCT,
+      FND_LOOKUPS  L6
+WHERE 
+      MIPR.WMS_RULE_ID              = WRV.RULE_ID
+      AND WSCT.RETURN_TYPE_ID(+)    = MIPR.WMS_RULE_ID
+      AND WRV.RULE_ID       =  WSCT.RETURN_TYPE_ID
+      AND L1.LOOKUP_CODE(+)         = MIPR.APPLY_TO_SOURCE
+      AND L1.LOOKUP_TYPE(+)         = 'MTL_PICK_APPL_SOURCE'
+      AND L1.LANGUAGE(+)            = USERENV('LANG')
+      AND L2.LOOKUP_CODE(+)         = MIPR.LOT_SORT
+      AND L2.LOOKUP_TYPE(+)         = 'MTL_PICK_LOT_RULE'
+      AND L2.LANGUAGE(+)            = USERENV('LANG')
+      AND L3.LOOKUP_CODE(+)         = MIPR.REVISION_SORT
+      AND L3.LOOKUP_TYPE(+)         = 'MTL_PICK_REVISION_RULE'
+      AND L3.LANGUAGE(+)            = USERENV('LANG')
+      AND L4.LOOKUP_CODE(+)         = MIPR.SUBINVENTORY_SORT
+      AND L4.LOOKUP_TYPE(+)         = 'MTL_PICK_SUBINVENTORY_RULE'
+      AND L4.LANGUAGE(+)            = USERENV('LANG')
+      AND L5.LOOKUP_CODE(+)         = MIPR.LOCATOR_SORT
+      AND L5.LOOKUP_TYPE(+)         = 'MTL_PICK_LOCATOR_RULE'
+      AND L5.LANGUAGE(+)            = USERENV('LANG')
+      AND L6.LOOKUP_CODE(+)         = WSCT.RETURN_TYPE 
+      AND L6.LOOKUP_TYPE(+)         =  'FND_CP_OPTIMIZER_MODE'
+      AND L7.LOOKUP_CODE         = WSCT.DATE_TYPE_CODE
+      AND L7.LOOKUP_TYPE         = 'WMS_DATE_TYPE'
+      AND L7.LANGUAGE            = USERENV('LANG')
+      AND WSCT.from_organization_id = '5703'
+      AND WSCT.rule_type_code         = 2
+ORDER BY 
+      SEQUENCE_NUMBER;

@@ -1,0 +1,17 @@
+CREATE OR REPLACE FORCE VIEW "APPS"."XXSAT_FA_PRICE_INDEXES_V"("DATA_DUMP","SEQ") AS
+SELECT 'Index,Flex Field,Value %,From Date,To Date,Flex Field'DATA_DUMP,1 SEQ
+FROM DUAL
+UNION
+SELECT 
+      ('"'||F1.PRICE_INDEX_NAME                  ||'","'||
+      (F1.ATTRIBUTE1||' '||F1.ATTRIBUTE2)        ||'","'||
+      F2.PRICE_INDEX_VALUE                       ||'","'||
+      TO_CHAR(F2.FROM_DATE,'DD-MON-YYYY')        ||'","'||
+      TO_CHAR(F2.TO_DATE,'DD-MON-YYYY')          ||'","'||
+      (F2.ATTRIBUTE1||' '||F2.ATTRIBUTE2)        ||'"')DATA_DUMP, 2 SEQ
+FROM FA_PRICE_INDEXES F1,
+     FA_PRICE_INDEX_VALUES F2
+WHERE F1.PRICE_INDEX_ID = F2.PRICE_INDEX_ID
+ORDER BY SEQ
+;
+    

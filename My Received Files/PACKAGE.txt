@@ -1,0 +1,1740 @@
+create or replace PACKAGE BODY XXSAT_PA_BUD_RESOURCE_LIST
+AS
+  gc_created_by  VARCHAR2 (50) := fnd_global.user_id;
+  gc_login_id    VARCHAR2 (50) := fnd_global.login_id;
+  VB_API_RETURN  BOOLEAN;
+  vv_err_message VARCHAR2(240);
+  vv_error_flag  VARCHAR2(1);
+  vv_error_flag_GRP  VARCHAR2(1);
+  vv_error_flag_C VARCHAR2(1);
+  vn_request_id  NUMBER := FND_GLOBAL.CONC_REQUEST_ID;
+  vv_app_short_name FND_APPLICATION.APPLICATION_SHORT_NAME%TYPE;
+  vv_flex_code FND_ID_FLEXS.ID_FLEX_CODE%TYPE;
+  vb_return           BOOLEAN;
+  vn_error_count      NUMBER :=0;
+  vn_count_records    NUMBER :=0;
+  vn_rsrc_lst_count   NUMBER :=0;
+  vn_rsrc_grp_count   NUMBER :=0;
+  vn_rsrc_child_count NUMBER :=0;
+  vn_RSRC_GRP_skipped     NUMBER :=0;
+  vv_msg_data         VARCHAR2(1000);
+  vn_msg_count        NUMBER;
+  vn_errorcode        NUMBER;
+  request_id          NUMBER;
+  VN_SUCCESS_COUNT NUMBER;
+  
+  PROCEDURE Create_New_Resource_List(
+      p_copy_from IN NUMBER ,
+      p_name      IN VARCHAR2 ,
+      p_description VARCHAR2 ,
+      P_start_date  DATE,
+      p_end_date    DATE,
+      Out_Res_List_Id OUT NUMBER)
+  IS
+    l_job_group_id    NUMBER;
+    l_control_flag    VARCHAR2(1);
+    l_use_for_wp_flag VARCHAR2(1);
+    l_return_status   VARCHAR2(1);
+    l_msg_data        VARCHAR2(1000);
+    l_msg_count       NUMBER := 0;
+  BEGIN
+    Out_Res_List_id := 0;
+    SELECT job_group_id,
+      control_flag,
+      use_for_wp_flag
+    INTO l_job_group_id,
+      l_control_flag,
+      l_use_for_wp_flag
+    FROM PA_RESOURCE_LISTS_all_bg
+    WHERE Resource_list_id = p_copy_from;
+    PA_CREATE_RESOURCE.Copy_Resource_list( P_Commit => 'F', P_Init_Msg_List => 'T', P_API_Version_Number => 1, p_parent_resource_list_id => p_copy_from, p_name => p_Name, p_description => p_DESCRIPTION, p_start_date_active => p_Start_Date, p_end_date_active => p_End_Date, p_job_group_id => l_job_group_id, p_control_flag => l_control_flag, p_use_for_wp_flag => l_use_for_wp_flag, x_return_status => l_return_status, x_msg_data => l_msg_data, x_msg_count => l_msg_count );
+    IF l_return_status <> 'S' THEN
+      FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Copy from API. Please create a new Resource List provoding all details ' ||SQLERRM);
+      vv_err_message := 'Unexpected Error in Copy from API. Please create a new Resource List provoding all details'; --Error Message
+      vv_error_flag  := 'E';
+      vn_error_count := vn_error_count+1;
+      XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, p_Name);
+    ELSE
+      SELECT resource_list_id
+      INTO Out_Res_List_id
+      FROM pa_resource_lists
+      WHERE name = p_Name;
+    END IF;
+  EXCEPTION
+  WHEN OTHERS THEN
+    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Copy from Procedure '||SQLERRM);
+    vv_err_message := 'Unexpected Error in Copy from Procedure' ; --Error Message
+    vv_error_flag  := 'E';
+    vn_error_count := vn_error_count+1;
+    XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, p_Name);
+  END Create_New_Resource_List;
+  
+
+  PROCEDURE MAIN(
+      x_errbuff OUT nocopy VARCHAR2,
+      x_RETCODE OUT nocopy NUMBER,
+      P_FILE_NAME IN VARCHAR2,
+      P_MODE      IN VARCHAR2)
+  IS
+    VN_business_group_id        NUMBER := fnd_profile.value('PER_BUSINESS_GROUP_ID') ;
+    VV_Public_Flag              VARCHAR2(1);
+    VV_Uncategorized_Flag       VARCHAR2(1) :='N';
+    VV_resource_Group           VARCHAR2(1) :='N';
+    vv_name                     VARCHAR2(240);
+    vv_description              VARCHAR2(2000);
+    VV_VALID_GROUP_FLAG         VARCHAR2(1);
+    VD_start_date_active        DATE;
+    VD_end_date_active          DATE;
+    Vv_job_group_name           VARCHAR2(30);
+    VN_job_group_id             NUMBER;
+    copy_from                   VARCHAR2(240);
+    copy_rsrc_list_id           NUMBER;
+    L_new_list_id               NUMBER;
+    VN_group_resource_type_id   NUMBER;
+    l_rowid                     VARCHAR2(1200);
+    VN_Resource_list_id         NUMBER;
+    VV_EXISTS_RSRC_LST          VARCHAR2(6);
+    --PARENT
+	VV_EXISTS_RSRC_GRP          VARCHAR2(6);
+    vn_resource_grp_id          NUMBER;
+    VV_RSRC_GRP_ALIAS           VARCHAR2(80);
+    VV_RSRC_GRP_CNTR_LEVEL      VARCHAR2(1);
+    VV_Resource_Group_order     NUMBER;
+    VV_expenditure_category     VARCHAR2(30);
+	VV_C_expenditure_category     VARCHAR2(30);
+    VV_track_as_labor_flag      VARCHAR2(1);
+    vv_unit_of_measure          VARCHAR2(5);
+    vv_rollup_quantity_flag     VARCHAR2(1);
+    v_RG_description            VARCHAR2(80);
+    vv_revenue_category_code    VARCHAR2(30);
+    VV_organization_name        VARCHAR2(240);
+    vv_organization_id          NUMBER(15);
+    VV_RESOURCE_GRP_Enable_FLAG VARCHAR2(1);
+    VN_Resource_list_member_id  NUMBER;
+    V_RSRC_LIST_INSERT_SUCC     VARCHAR2(1);
+    V_RSRC_LIST_UPD_SUCC        VARCHAR2(1);
+    V_RSRC_GRP_INSERT_SUCC      VARCHAR2(1);
+    V_RSRC_GRP_UPD_SUCC         VARCHAR2(1);
+    vn_exists_alias             NUMBER ;
+    VN_ORDER_EXISTS             NUMBER;
+    VV_OLD_ALIAS                VARCHAR2(80);
+    VV_OLD_SORT_ORDER           VARCHAR2(1);
+    VV_OLD_ENABLED_FLAG         VARCHAR2(1);
+    l_row_id                    VARCHAR2(2000);    
+    VV_RSRC_GRP_NAME            VARCHAR2(80);
+    VN_Parent_Resource_id	 NUMBER;
+    -- CHILD
+    l_c_row_id                  VARCHAR2(2000);
+	VV_EXISTS_CHILD_GRP         VARCHAR2(6);
+    vn_resource_id              NUMBER;
+    vv_c_resource_type_name    VARCHAR2(60);
+    vv_c_resource_type_id      NUMBER;
+    vv_c_employee_name         VARCHAR2(4000);
+    vn_c_person_id             NUMBER;
+    vv_c_track_as_labor_flag   VARCHAR2(1);
+    vv_c_unit_of_measure       VARCHAR2(5);
+    vv_c_rollup_quantity_flag  VARCHAR2(1);
+    vv_c_person_type           VARCHAR2(40);
+    vn_c_employee_number       NUMBER;
+    vv_c_event_type            VARCHAR2(4000);
+    vv_v_expenditure_type      VARCHAR2(4000);
+    vv_c_job_name              VARCHAR2(4000);
+    vv_c_job_id                NUMBER;
+    vv_c_organization_name     VARCHAR2(4000);
+    vv_c_organization_id       NUMBER;
+    vv_c_revenue_category_code VARCHAR2(4000);
+    vv_c_vendor_name           VARCHAR2 (4000);
+    vv_c_vendor_id             NUMBER;
+    VV_RESOURCE_C_Enable_FLAG  VARCHAR2(1);
+    VV_RSRC_C_ALIAS            VARCHAR2(80);
+    VV_OLD_C_ALIAS             VARCHAR2(80);
+    vn_c_exists_alias          NUMBER;
+    VV_OLD_C_SORT_ORDER        NUMBER;
+    VV_RSRC_C_CNTR_LEVEL       VARCHAR2(1);
+    VN_Resource_C_order        NUMBER;
+    VN_C_ORDER_EXISTS          NUMBER;
+    VN_child_list_member_id    NUMBER;
+	VN_RESOURCE_EXISTS          NUMBER;
+	VV_PARENT_SKIPPED VARCHAR2(1);
+	vn_c_Member_Level  NUMBER;
+	
+	CURSOR C_RESOURCE_LIST
+    IS
+      SELECT DISTINCT Resource_list,
+        Description,
+        Job_group,
+        Group_Resources_by,
+        START_DATE_ACTIVE,
+        END_DATE_ACTIVE,
+        copy_from
+      FROM XXSAT_PA_BUD_RESOURCE_LST XGP
+      WHERE file_name= P_FILE_NAME;
+	  
+    CURSOR C_RESOURCE_GROUP (p_resource_list VARCHAR2)
+    IS
+      SELECT RESOURCE_GROUP_NAME,
+        Resource_GRP_alias,
+        RESOURCE_GRP_CNTRL_LEVEL,
+        RESOURCE_GRP_ORDER,
+        RESOURCE_GRP_Enable_FLAG
+      FROM XXSAT_PA_BUD_RESOURCE_LST XGP
+      WHERE file_name  = P_FILE_NAME
+      AND Resource_list=p_resource_list
+      GROUP BY RESOURCE_GROUP_NAME,
+        Resource_GRP_alias,
+        RESOURCE_GRP_CNTRL_LEVEL,
+        RESOURCE_GRP_ORDER,
+        RESOURCE_GRP_Enable_FLAG;
+    
+	CURSOR C_CHILD_RESOURCE(p_resource_list VARCHAR2,p_RESOURCE_GROUP_NAME VARCHAR2)
+    IS
+      SELECT RESOURCE_TYPE,
+        RESOURCE_NAME,
+        RESOURCE_ALIAS,
+        RESOURCE_CNTL_LEVEL,
+        RESOURCE_ORDER,
+        RESOURCE_ENABLE_FLAG
+      FROM XXSAT_PA_BUD_RESOURCE_LST XGP
+      WHERE file_name        = P_FILE_NAME
+      AND Resource_list      =p_resource_list
+      AND NVL(RESOURCE_GROUP_NAME,'X')= NVL(p_RESOURCE_GROUP_NAME,'X')
+      GROUP BY RESOURCE_TYPE,
+        RESOURCE_NAME,
+        RESOURCE_ALIAS,
+        RESOURCE_CNTL_LEVEL,
+        RESOURCE_ORDER,
+        RESOURCE_ENABLE_FLAG;
+
+PROCEDURE Group_reset_variables as
+BEGIN
+	VV_EXISTS_RSRC_GRP          :=NULL;
+    vn_resource_grp_id          :=NULL;
+    VV_RSRC_GRP_ALIAS           :=NULL;
+    VV_RSRC_GRP_CNTR_LEVEL      :=NULL;
+    VV_Resource_Group_order     :=NULL;
+    VV_expenditure_category     :=NULL;
+	VV_C_expenditure_category   :=NULL;
+    VV_track_as_labor_flag      :=NULL;
+    vv_unit_of_measure          :=NULL;
+    vv_rollup_quantity_flag     :=NULL;
+    v_RG_description            :=NULL;
+    vv_revenue_category_code    :=NULL;
+    VV_organization_name        :=NULL;
+    vv_organization_id          :=NULL;
+    VV_RESOURCE_GRP_Enable_FLAG :=NULL;
+    VN_Resource_list_member_id  :=NULL;
+    V_RSRC_LIST_INSERT_SUCC     :=NULL;
+    V_RSRC_LIST_UPD_SUCC        :=NULL;
+    V_RSRC_GRP_INSERT_SUCC      :=NULL;
+    V_RSRC_GRP_UPD_SUCC         :=NULL;
+    vn_exists_alias             :=NULL;
+    VN_ORDER_EXISTS             :=NULL;
+    VV_OLD_ALIAS                :=NULL;
+    VV_OLD_SORT_ORDER           :=NULL;
+    VV_OLD_ENABLED_FLAG         :=NULL;
+    l_row_id                    :=NULL;    
+    VV_RSRC_GRP_NAME            :=NULL;
+    VN_Parent_Resource_id	 	:=NULL;
+    vv_error_flag_GRP :=null;
+   	fnd_file.put_line(fnd_file.log,'Variables Reset for Group');
+  END Group_RESET_VARIABLES;
+
+PROCEDURE child_reset_variables as
+BEGIN
+    l_c_row_id                   :=NULL;
+	VV_EXISTS_CHILD_GRP          :=NULL;
+    vn_resource_id               :=NULL;
+    vv_c_resource_type_name      :=NULL;
+    vv_c_resource_type_id        :=NULL;
+    vv_c_employee_name           :=NULL;
+    vn_c_person_id               :=NULL;
+    vv_c_track_as_labor_flag     :=NULL;
+    vv_c_unit_of_measure         :=NULL;
+    vv_c_rollup_quantity_flag    :=NULL;
+    vv_c_person_type             :=NULL;
+    vn_c_employee_number   	 	 :=NULL;
+    vv_c_event_type              :=NULL;
+    vv_v_expenditure_type        :=NULL;
+    vv_c_job_name                :=NULL;
+    vv_c_job_id                  :=NULL;
+    vv_c_organization_name       :=NULL;
+    vv_c_organization_id         :=NULL;
+    vv_c_revenue_category_code   :=NULL;
+    vv_c_vendor_name             :=NULL;
+    vv_c_vendor_id               :=NULL;
+    VV_RESOURCE_C_Enable_FLAG    :=NULL;
+    VV_RSRC_C_ALIAS              :=NULL;
+    VV_OLD_C_ALIAS               :=NULL;
+    vn_c_exists_alias            :=NULL;
+    VV_OLD_C_SORT_ORDER          :=NULL;
+    VV_RSRC_C_CNTR_LEVEL         :=NULL;
+    VN_Resource_C_order          :=NULL;
+    VN_C_ORDER_EXISTS            :=NULL;
+    VN_child_list_member_id      :=NULL;
+	VN_RESOURCE_EXISTS           :=NULL;
+	VV_PARENT_SKIPPED            :=NULL;
+	vn_c_Member_Level			 :=NULL;
+  vv_error_flag_C :=null;
+	fnd_file.put_line(fnd_file.log,'Variables Reset for Child');
+  END child_reset_variables;
+  
+PROCEDURE Insert_Res_Txn_Attr (Attribute_Type  In Varchar2,
+                               Attribute_Value In Varchar2,
+                               W_Resource_Id In Number) IS
+W_Expenditure_Category Varchar2(30);
+W_Revenue_Category     Varchar2(30);
+W_Person_Id            Number ;
+W_Job_Id               Number ;
+W_Org_Id               Number ;
+W_Vendor_Id            Number ;
+W_Expenditure_Type     Varchar2(30);
+W_Event_Type           Varchar2(30);
+W_Resource_Format_Id   Number := 0;
+W_Resource_Txn_attr_id Number := 0;
+W_LAST_UPDATED_BY      Number := 0;
+W_LAST_UPDATE_DATE     Date;
+W_CREATION_DATE        Date;
+W_CREATED_BY           Number;
+W_LAST_UPDATE_LOGIN    Number;
+
+BEGIN
+         W_Last_Update_Date   := Sysdate;
+         W_Last_Updated_By    := Nvl(To_Number(Fnd_Profile.Value('USER_ID')),-1);
+         W_Creation_Date      := Sysdate;
+         W_Created_By         := Nvl(To_Number(Fnd_Profile.Value('USER_ID')),-1);
+         W_Last_Update_Login  := Nvl(To_Number(Fnd_Profile.Value('LOGIN_ID')),-1);
+     Select PA_RESOURCE_TXN_ATTRIBUTES_S.NEXTVAL into W_Resource_Txn_Attr_id from dual;
+     If Attribute_Type = 'EXPENDITURE CATEGORY' Then
+        W_Expenditure_Category := Attribute_Value;
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'Y' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+
+     Elsif
+        Attribute_Type = 'REVENUE CATEGORY' Then
+        W_Revenue_Category := Attribute_Value;
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'Y' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     Elsif
+        Attribute_Type = 'EXPENDITURE TYPE' Then
+        W_Expenditure_Type := Attribute_Value;
+         Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'Y' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     Elsif
+        Attribute_Type = 'EVENT TYPE' Then
+        W_Event_Type := Attribute_Value;
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'Y' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';  Elsif
+        Attribute_Type = 'EMPLOYEE' Then
+        W_Person_id  := To_Number(Attribute_Value);
+         Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'Y' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     Elsif
+        Attribute_Type = 'JOB' Then
+        W_Job_id  := To_Number(Attribute_Value);
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'Y' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     Elsif
+        Attribute_Type = 'ORGANIZATION' Then
+        W_Org_id  := To_Number(Attribute_Value);
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'Y' and
+           Nvl(Vendor_Id_Flag,'N') = 'N' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and  Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     Elsif
+        Attribute_Type = 'VENDOR' Then
+        W_Vendor_id  := To_Number(Attribute_Value);
+        Select Resource_Format_Id into W_Resource_Format_id from
+        PA_RESOURCE_FORMATS where
+           Nvl(Person_Id_Flag,'N') = 'N' and
+           Nvl(Job_id_Flag,'N') = 'N' and
+           Nvl(Organization_Id_Flag,'N') = 'N' and
+           Nvl(Vendor_Id_Flag,'N') = 'Y' and
+           Nvl(Expenditure_Type_Flag,'N') = 'N' and
+           Nvl(Event_Type_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Flag,'N') = 'N' and
+           Nvl(Expenditure_Category_Flag,'N') = 'N' and
+           Nvl(Revenue_Category_Flag,'N') = 'N' and
+           Nvl(Non_Labor_Resource_Org_Id_Flag,'N') = 'N' and
+           Nvl(Event_Type_Classification_Flag,'N') = 'N' and
+           Nvl(System_Linkage_Function_Flag,'N') = 'N';
+     End if;
+   Insert into PA_RESOURCE_TXN_ATTRIBUTES
+   (RESOURCE_TXN_ATTRIBUTE_ID,RESOURCE_ID,PERSON_ID,JOB_ID,ORGANIZATION_ID,VENDOR_ID,
+    EXPENDITURE_TYPE,EVENT_TYPE,EXPENDITURE_CATEGORY,REVENUE_CATEGORY,RESOURCE_FORMAT_ID,
+    LAST_UPDATED_BY,LAST_UPDATE_DATE,CREATION_DATE,CREATED_BY,LAST_UPDATE_LOGIN) Values
+   (W_Resource_Txn_attr_id ,W_Resource_id,W_person_id,w_job_id,w_org_id,W_Vendor_id,
+    W_Expenditure_Type,W_Event_Type,W_Expenditure_Category,W_Revenue_Category,W_Resource_Format_Id,
+    W_last_Updated_by,W_Last_Update_Date,W_Creation_Date,W_Created_By,W_Last_Update_Login);
+Exception 
+
+  When OTHERS THEN
+      fnd_file.put_line(fnd_file.log,'Error while inserting in PA_RESOURCE_TXN_ATTRIBUTES  - '||SQLERRM);
+END;
+  
+  BEGIN
+    vn_request_id := FND_GLOBAL.CONC_REQUEST_ID;
+    fnd_file.put_line(fnd_file.log,'Request ID - '||vn_request_id);
+	fnd_file.put_line(fnd_file.log,'VN_business_group_id - '||VN_business_group_id);
+	
+    FOR R_RESOURCE_LIST IN C_RESOURCE_LIST
+    LOOP --R_RESOURCE_LIST
+      fnd_file.put_line(fnd_file.log,'Runinng for - '||R_RESOURCE_LIST.Resource_list);
+	  vv_error_flag := NULL;
+	  BEGIN
+        SELECT 'EXISTS',
+          Resource_list_id
+        INTO VV_EXISTS_RSRC_LST,
+          vn_resource_list_id
+        FROM PA_RESOURCE_LISTS
+        WHERE UPPER(NAME)=UPPER(R_RESOURCE_LIST.Resource_list)
+		AND BUSINESS_GROUP_ID=VN_business_group_id;
+      EXCEPTION
+      WHEN OTHERS THEN
+        VV_EXISTS_RSRC_LST := NULL;
+        vn_resource_list_id:= NULL;
+        fnd_file.put_line(fnd_file.log,'Creating a new Resource List ');
+      END;
+	  
+	  
+	  IF R_RESOURCE_LIST.Resource_list IS NOT NULL THEN
+	   vv_name        := R_RESOURCE_LIST.Resource_list;
+	  ELSE
+        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource List Name can not be NULL. Please provide a valid and Unique Value');
+        vv_err_message := 'Resource List Name: ' || R_RESOURCE_LIST.Group_Resources_by || 'can not be NULL. Please provide a valid and Unique Value.'; --Error Message
+        vv_error_flag  := 'E';
+        vn_error_count := vn_error_count+1;
+        XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);			  
+	  END IF;
+     
+      vv_description := R_RESOURCE_LIST.description;
+      VV_Public_Flag := 'Y';
+      -- Resource Group Name
+      BEGIN
+        --VN_group_resource_Group_name:= P_Resource_Group_Name
+        SELECT GROUP_RESOURCE_TYPE_ID,
+          VALID_GROUP_FLAG
+        INTO VN_group_resource_type_id,
+          VV_VALID_GROUP_FLAG
+        FROM PA_RESOURCE_GROUPS_VALID_V
+        WHERE UPPER(RESOURCE_GROUP_NAME)=UPPER( NVL(R_RESOURCE_LIST.Group_Resources_by,'Expenditure Category'))
+        AND TRUNC(SYSDATE) BETWEEN TRUNC(START_DATE_ACTIVE) AND NVL(TRUNC(END_DATE_ACTIVE), TRUNC(SYSDATE)+1);
+        
+		IF VN_group_resource_type_id  =0 THEN
+		FND_FILE.PUT_LINE(FND_FILE.LOG, 'Group Resources by is null. hence Marking records as Completed/Skipped ');
+          --VN_Resource_list_member_id := NULL;
+          UPDATE XXSAT_PA_BUD_RESOURCE_LST --(2nd block is skipped since Group Resources by is null)
+          SET RESOURCE_GROUP_STATUS                    ='S'
+          WHERE Resource_list                          =R_RESOURCE_LIST.Resource_list
+          AND upper(R_RESOURCE_LIST.Group_Resources_by)='None';
+        END IF;
+      EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Invalid Group Resources By: ' || R_RESOURCE_LIST.Group_Resources_by);
+        vv_err_message := 'Invalid Group Resources By: ' || R_RESOURCE_LIST.Group_Resources_by || 'Please use a valid Group Resources By Value' ; --Error Message
+        vv_error_flag  := 'E';
+        vn_error_count := vn_error_count+1;
+        XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);		
+	  WHEN OTHERS THEN
+        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error validating Group Resources By: ' || R_RESOURCE_LIST.Group_Resources_by || ' Reason: '||SQLERRM);
+        vv_err_message := 'Error validating Group Resources by: ' || R_RESOURCE_LIST.Group_Resources_by || 'Please refer to logs for more details or contact your system administrator' ; --Error Message
+        vv_error_flag  := 'E';
+        vn_error_count := vn_error_count+1;
+        XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+      END;
+      
+	  --If Start date is null,  then use sysdate
+	  VD_start_date_active := NVL(TO_CHAR(to_date(R_RESOURCE_LIST.START_DATE_ACTIVE,'DD-MM-RRRR'),'DD-MON-RRRR'),SYSDATE);
+      
+	  IF R_RESOURCE_LIST.END_DATE_ACTIVE                          IS NOT NULL THEN
+        IF to_date(R_RESOURCE_LIST.END_DATE_ACTIVE, 'DD-MM-RRRR') >= to_date(VD_start_date_active, 'DD-MM-RRRR') THEN
+          VD_end_date_active                                      := TO_CHAR(to_date(R_RESOURCE_LIST.END_DATE_ACTIVE,'DD-MM-RRRR'),'DD-MON-RRRR');
+        ELSE
+          VD_end_date_active := NULL;
+          FND_FILE.PUT_LINE(FND_FILE.LOG, 'From or Start Date should be greater than the to or End date ');
+          vv_err_message := 'From or Start Date should be greater than the to or End date'; --Error Message
+          vv_error_flag  := 'E';
+          vn_error_count := vn_error_count+1;
+          XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+        END IF;
+      ELSE
+        VD_end_date_active := NULL;
+      END IF;
+      
+	  BEGIN
+        SELECT SUBSTR(job_group_name,1,35),
+          TO_CHAR(job_group_id)
+        INTO VV_job_group_name,
+          VN_job_group_id
+        FROM pa_job_groups_v
+        WHERE UPPER(job_group_name)=UPPER(NVL(R_RESOURCE_LIST.JOB_GROUP, 'None'))
+        UNION
+        SELECT SUBSTR(meaning,1,35),
+          TO_CHAR(NULL)
+        AND UPPER(lookup_code)=UPPER(NVL(R_RESOURCE_LIST.JOB_GROUP, 'None'));
+        FROM pa_lookups
+        WHERE lookup_type     ='RESOURCE_GROUP_NONE'
+        AND lookup_code       ='NONE'
+      EXCEPTION
+      WHEN NO_DATA_FOUND THEN
+        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Invalid Job Group' || R_RESOURCE_LIST.JOB_GROUP || '. Please use a valid Group Resources By Value');
+        vv_err_message := 'Invalid Job Group : ' || R_RESOURCE_LIST.JOB_GROUP || '. Please use a valid Group Resources By Value' ; --Error Message
+        vv_error_flag  := 'E';
+        vn_error_count := vn_error_count+1;
+        XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);		
+      WHEN OTHERS THEN
+        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error Validating Job Group Value: '|| R_RESOURCE_LIST.JOB_GROUP ||  'Reason: ' || SQLERRM );
+        vv_err_message := 'Error validating Job Group: ' ||R_RESOURCE_LIST.JOB_GROUP ||'Please refer to logs for more details or contact your system administrator'; --Error Message
+        vv_error_flag  := 'E';
+        vn_error_count := vn_error_count+1;
+        XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+      END;
+	  
+    IF COPY_FROM IS NOT NULL AND P_MODE IN ('C','B') AND VV_EXISTS_RSRC_LST IS NULL THEN
+		SELECT resource_list_id
+		INTO copy_rsrc_list_id
+		FROM pa_resource_lists
+		WHERE group_resource_type_id    = VN_group_resource_type_id
+		AND UPPER(NAME)=UPPER(R_RESOURCE_LIST.Resource_list)
+		AND BUSINESS_GROUP_ID=VN_business_group_id
+		AND NVL(migration_code, '-99') <> 'N'
+		ORDER BY 1;
+		Create_New_Resource_List (copy_rsrc_list_id,R_RESOURCE_LIST.resource_list,R_RESOURCE_LIST.description,R_RESOURCE_LIST.START_DATE_ACTIVE,R_RESOURCE_LIST.END_DATE_ACTIVE,L_new_list_id);
+    ELSE -- COPY_FROM
+		IF VV_EXISTS_RSRC_LST IS NULL THEN --VV_EXISTS_RSRC_LST
+			IF P_MODE IN ('C','B') THEN -- mode_check_list
+            BEGIN
+              SELECT Pa_resource_lists_s.nextval INTO VN_Resource_list_id FROM dual;
+            EXCEPTION
+            WHEN OTHERS THEN
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error Fetching sequence for New Resource List' ||SQLERRM);
+              vv_err_message := 'Error Fetching sequence for New Resource List'; --Error Message
+              vv_error_flag  := 'E';
+              vn_error_count := vn_error_count+1;
+              XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+            END;
+            BEGIN
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource list Insert vv_error_flag: ' ||vv_error_flag);
+              IF vv_error_flag ='E' THEN -- Skip if any error for Resource List
+                UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                SET RESOURCE_STATUS='E'
+                WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+              ELSE
+                FND_FILE.PUT_LINE(FND_FILE.LOG, 'Creating a new Resource List');
+                PA_Resource_List_tbl_Pkg.insert_row( X_ROW_ID => l_rowid, X_RESOURCE_LIST_ID => VN_Resource_list_id , X_NAME => vv_name, X_DESCRIPTION => vv_description, X_PUBLIC_FLAG => VV_Public_Flag, X_GROUP_RESOURCE_TYPE_ID => vn_group_resource_type_id, X_START_DATE_ACTIVE => VD_start_date_active, X_END_DATE_ACTIVE => VD_end_date_active , X_UNCATEGORIZED_FLAG => VV_Uncategorized_Flag, X_BUSINESS_GROUP_ID => VN_business_group_id, X_JOB_GROUP_ID => VN_job_group_id, X_LAST_UPDATED_BY => gc_created_by , X_LAST_UPDATE_DATE => sysdate, X_CREATION_DATE => sysdate, X_CREATED_BY => gc_created_by, X_LAST_UPDATE_LOGIN => gc_login_id);
+                SET RESOURCE_STATUS='Y'
+                fnd_file.put_line(fnd_file.log,' API Successfull : Resource List created Successfully');
+                V_RSRC_LIST_INSERT_SUCC :='Y';
+                UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+              END IF;
+            EXCEPTION
+            WHEN OTHERS THEN
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in API, Please check the Output file for more information' ||SQLERRM);
+              vv_err_message := 'Unexpected Error in API, Please check the logs for more information' ||SQLERRM; --Error Message
+              vv_error_flag  := 'E';
+              vn_error_count := vn_error_count+1;
+              XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+              fnd_file.put_line(fnd_file.log,'Resource List Insert API in ERROR');
+              UPDATE XXSAT_PA_BUD_RESOURCE_LST
+              SET RESOURCE_STATUS='E'
+              WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+            END;
+			ELSE -- mode_check_list
+              IF P_MODE IN ('U') THEN
+                UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                SET RESOURCE_STATUS='E'
+                WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+                FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource List: '||R_RESOURCE_LIST.Resource_list|| ' Doesnt exists, Please change the mode and re-run.');
+                vv_err_message := 'Resource List: '||R_RESOURCE_LIST.Resource_list|| ' Doesnt exists, Please change the mode and re-run'; --Error Message
+                vv_error_flag  := 'E';
+                vn_error_count := vn_error_count+1;
+                XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+              END IF;
+            END IF; -- mode_check_list
+        ELSE-- RESOURCE CHECK (VV_EXISTS_RSRC_LST iS NOT NULL)
+			IF P_MODE IN ('U','B') THEN -- MODE_CHECk_U
+				BEGIN
+				  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource list update vv_error_flag: ' ||vv_error_flag);
+				  IF vv_error_flag ='E' THEN -- Skip if any error
+				  UPDATE XXSAT_PA_BUD_RESOURCE_LST
+				  SET RESOURCE_STATUS='E'
+				  WHERE Resource_list=R_RESOURCE_LIST.Resource_list;				
+				ELSE
+					FND_FILE.PUT_LINE(FND_FILE.LOG, 'About to Update Resource list');
+					PA_Resource_List_tbl_Pkg.update_row( X_ROW_ID => NULL, X_RESOURCE_LIST_ID => VN_Resource_list_id , X_NAME => vv_name, X_DESCRIPTION => vv_description, X_PUBLIC_FLAG => VV_Public_Flag, X_GROUP_RESOURCE_TYPE_ID => vn_group_resource_type_id, X_START_DATE_ACTIVE => VD_start_date_active, X_END_DATE_ACTIVE => VD_end_date_active , X_UNCATEGORIZED_FLAG =>VV_Uncategorized_Flag, X_BUSINESS_GROUP_ID =>VN_business_group_id, X_JOB_GROUP_ID => VN_job_group_id, X_LAST_UPDATED_BY => gc_created_by , X_LAST_UPDATE_DATE => sysdate, X_LAST_UPDATE_LOGIN => gc_login_id);
+					V_RSRC_LIST_UPD_SUCC :='Y';
+					FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource list Updated Successfully');
+					UPDATE XXSAT_PA_BUD_RESOURCE_LST
+					SET RESOURCE_STATUS='Y'
+					WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+				END IF;
+				EXCEPTION
+				WHEN OTHERS THEN
+				  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Update API, Please check the Output file for more information' ||SQLERRM);
+				  vv_err_message := 'Unexpected Error in Update API, Please check the logs for more information' ||SQLERRM; --Error Message
+				  vv_error_flag  := 'E';
+				  vn_error_count := vn_error_count+1;
+				  XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+				  fnd_file.put_line(fnd_file.log,'Update API for Resrouce list in ERROR');
+				  UPDATE XXSAT_PA_BUD_RESOURCE_LST
+				  SET RESOURCE_STATUS='E'
+				  WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+				END;
+			ELSE-- MODE_CHECK_U
+				IF P_MODE IN ('C') THEN
+				  UPDATE XXSAT_PA_BUD_RESOURCE_LST
+				  SET RESOURCE_STATUS='S'
+				  WHERE Resource_list=R_RESOURCE_LIST.Resource_list;
+				  fnd_file.put_line(fnd_file.log,'Resource List Already Exists. Skipping to Check Resrouce Group');
+				END IF;
+			END IF;-- MODE_CHECK_U
+        END IF;  --RESORUCE CHECK (VV_EXISTS_RSRC_LST)
+        
+		fnd_file.put_line(fnd_file.log,' for Parent Group Resources By ID' || VN_group_resource_type_id);
+        -- 2nd Block
+		IF (V_RSRC_LIST_INSERT_SUCC='Y' OR V_RSRC_LIST_UPD_SUCC='Y' OR VV_EXISTS_RSRC_LST IS NOT NULL)  THEN -- --AND VN_group_resource_type_id <> 0
+          FOR R_RESOURCE_GROUP IN C_RESOURCE_GROUP(R_RESOURCE_LIST.Resource_list)
+            LOOP --PARENT_LOOP
+          	  Group_reset_variables();
+
+IF VN_group_resource_type_id =0 THEN
+                        FND_FILE.PUT_LINE(FND_FILE.LOG, 'Skipped');
+                VV_PARENT_SKIPPED :='Y';
+                GOTO SKIP_PARENT;
+                end if;
+		    IF  R_RESOURCE_GROUP.RESOURCE_GROUP_NAME IS NOT NULL THEN --PARENT_DATA
+              fnd_file.put_line(fnd_file.log,'Processing Resource Group ' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME);
+              --VV_RSRC_GRP_NAME := R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+              BEGIN
+                SELECT 'EXISTS',
+                  PPR.ROWID,
+                  RESOURCE_ID,
+                  RESOURCE_LIST_MEMBER_ID,
+                  ALIAS,
+                  SORT_ORDER
+                  VN_Resource_list_member_id,
+                INTO VV_EXISTS_RSRC_GRP,
+                  l_row_id,
+                  vn_resource_grp_id,
+                  VV_OLD_ALIAS,
+                  VV_OLD_SORT_ORDER
+                FROM PA_PARENT_RESOURCES_V PPR,
+                  PA_RESOURCE_LISTS PRL
+                WHERE UPPER(RESOURCE_NAME)=UPPER(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME)
+                AND PPR.RESOURCE_LIST_ID  =PRL.RESOURCE_LIST_ID
+                AND UPPER(PRL.NAME)       =UPPER(R_RESOURCE_LIST.Resource_list);
+              EXCEPTION
+              WHEN OTHERS THEN
+                VV_EXISTS_RSRC_GRP := NULL;
+                vn_resource_grp_id := NULL;
+				fnd_file.put_line(fnd_file.log,'Resource Group ID (vn_resource_grp_id)  is null');
+              END;
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Group Resources by is : '|| R_RESOURCE_LIST.Group_Resources_by );
+              BEGIN
+                IF UPPER(R_RESOURCE_LIST.Group_Resources_by) ='EXPENDITURE CATEGORY' THEN
+				              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Inside EXPENDITURE_CATEGORY' );
+                  SELECT R_RESOURCE_GROUP.Resource_Group_name,
+                  expenditure_category,
+                    track_as_labor_flag , --expenditure_category resource_name,
+                    unit_of_measure,
+                    rollup_quantity_flag,
+                    description--,expenditure_category expenditure_resource_name
+                  INTO VV_RSRC_GRP_NAME,
+                  VV_expenditure_category,
+                    VV_track_as_labor_flag,
+                    vv_unit_of_measure,
+                    vv_rollup_quantity_flag,
+                    v_RG_description
+                  FROM pa_expend_categories_res_v
+                  WHERE UPPER(expenditure_category)=UPPER(R_RESOURCE_GROUP.Resource_Group_name)
+                  ORDER BY 1 ;
+                ELSIF UPPER(R_RESOURCE_LIST.Group_Resources_by) ='REVENUE CATEGORY' THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Inside REVENUE CATEGORY' );
+                  SELECT R_RESOURCE_GROUP.Resource_Group_name ,
+                  description,
+                    revenue_category_code,
+                    track_as_labor_flag,
+                    unit_of_measure,
+                    rollup_quantity_flag
+                  INTO VV_RSRC_GRP_NAME,
+                  v_RG_description,
+                    vv_revenue_category_code,
+                    VV_track_as_labor_flag,
+                    vv_unit_of_measure,
+                    vv_rollup_quantity_flag
+                  FROM pa_revenue_categories_res_v
+                  WHERE UPPER(REVENUE_CATEGORY_CODE)=UPPER(R_RESOURCE_GROUP.Resource_Group_name)
+                  ORDER BY 1;
+                ELSIF UPPER(R_RESOURCE_LIST.Group_Resources_by) ='ORGANIZATION' THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Inside ORGANIZATION' );
+                  SELECT DISTINCT R_RESOURCE_GROUP.Resource_Group_name,
+                  organization_name,
+                    organization_id,
+                    track_as_labor_flag,
+                    unit_of_measure,
+                    rollup_quantity_flag
+                  INTO VV_RSRC_GRP_NAME,
+                  VV_organization_name,
+                    vv_organization_id,
+                    VV_track_as_labor_flag,
+                    vv_unit_of_measure,
+                    vv_rollup_quantity_flag
+                  FROM pa_organizations_res_v
+                  WHERE organization_name=UPPER(R_RESOURCE_GROUP.Resource_Group_name)
+                  ORDER BY 1 ;
+                ELSIF UPPER(R_RESOURCE_LIST.Group_Resources_by) ='NONE' THEN
+                FND_FILE.PUT_LINE(FND_FILE.LOG, 'Skipped');
+                VV_PARENT_SKIPPED :='Y';
+                GOTO SKIP_PARENT;
+          
+				ELSE
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Please use a valid Group Resource By. Available Options: Expenditure Category, Revenue Category, Ogrnization, None' );
+				vv_err_message := 'Please use a valid Group Resource By. Available Options: Expenditure Category, Revenue Category, Ogrnization, None' ; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);					
+                END IF;
+              EXCEPTION
+				WHEN NO_DATA_FOUND THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Invalid Resource Group Name' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME|| 'for Group Resources By: '||R_RESOURCE_LIST.Group_Resources_by );
+				vv_err_message := 'Invalid Resource Group Name' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME|| 'for Group Resources By: '||R_RESOURCE_LIST.Group_Resources_by; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);		
+				WHEN OTHERS THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error Validating Resource Group Name: '|| R_RESOURCE_GROUP.RESOURCE_GROUP_NAME ||  'Reason: ' || SQLERRM );
+				vv_err_message := 'Error Validating Resource Group Name: '|| R_RESOURCE_GROUP.RESOURCE_GROUP_NAME  ||'Please refer to logs for more details or contact your system administrator'; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                END;			  
+                  SELECT Re.Resource_id
+			FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group Name is : '|| VV_RSRC_GRP_NAME );
+              IF vn_resource_grp_id IS NULL THEN
+                BEGIN
+                  INTO vn_resource_grp_id
+                  FROM pa_resources re,
+                    pa_resource_txn_attributes prta
+                  WHERE prta.resource_id         = re.resource_id
+				  AND RESOURCE_TYPE_ID=VN_group_resource_type_id
+                  AND Upper(name)=UPPER(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME);
+				
+				EXCEPTION
+				WHEN OTHERS THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Since No Resource ID fetched for '||R_RESOURCE_GROUP.RESOURCE_GROUP_NAME||'Inserting a new record in resource table for parent' );
+				END;
+			  END IF;	
+				
+			IF vn_resource_grp_id IS NULL and VV_RSRC_GRP_NAME IS NOT NULL And vv_error_flag_GRP is null THEN
+			begin
+			Select PA_RESOURCES_S.NEXTVAL into VN_Parent_Resource_id from dual;
+			FND_FILE.PUT_LINE(FND_FILE.LOG, 'New Resource ID is: ' || VN_Parent_Resource_id );			
+				Insert Into PA_RESOURCES (
+				RESOURCE_ID,NAME,DESCRIPTION,RESOURCE_TYPE_ID,UNIT_OF_MEASURE,ROLLUP_QUANTITY_FLAG,START_DATE_ACTIVE,END_DATE_ACTIVE,
+				TRACK_AS_LABOR_FLAG,
+				LAST_UPDATE_DATE,
+				LAST_UPDATED_BY,
+				CREATION_DATE,
+				CREATED_BY,
+				LAST_UPDATE_LOGIN)
+				Values (  VN_Parent_Resource_id  ,
+				VV_RSRC_GRP_NAME,
+				VV_RSRC_GRP_NAME,
+				VN_group_resource_type_id,
+				vv_unit_of_measure,
+				vv_rollup_quantity_flag,
+				Trunc(Sysdate),
+				NULL,
+				VV_track_as_labor_flag,
+				sysdate,
+				-1,
+				sysdate,
+				-1,
+				-1);
+				
+			
+Insert_Res_Txn_Attr (R_RESOURCE_LIST.Group_Resources_by,
+                          VV_RSRC_GRP_NAME,
+                          VN_Parent_Resource_id);		
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Old Alias is: ' ||VV_OLD_ALIAS);
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'New Alias is: ' || R_RESOURCE_GROUP.Resource_GRP_alias);
+              			EXCEPTION
+			WHEN OTHERS THEN
+			  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error while inserting data in Resource and attributes table');
+			END;
+			END IF;
+              IF NVL(VV_OLD_ALIAS,'XX') <> R_RESOURCE_GROUP.Resource_GRP_alias THEN
+                BEGIN
+                  SELECT Resource_List_Member_Id
+                  INTO vn_exists_alias
+                  FROM pa_parent_resources_v
+                  WHERE Resource_List_Id = VN_Resource_list_id
+                  AND Upper(ALIAS)       = Upper(R_RESOURCE_GROUP.Resource_GRP_alias);
+                EXCEPTION
+                WHEN OTHERS THEN
+                  vn_exists_alias:= NULL;
+                END;
+                IF vn_exists_alias  IS NULL and R_RESOURCE_GROUP.Resource_GRP_alias is not null THEN
+                  VV_RSRC_GRP_ALIAS := R_RESOURCE_GROUP.Resource_GRP_alias;
+                ELSE
+                  VV_RSRC_GRP_ALIAS := NULL;
+				  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Alias: ' ||R_RESOURCE_GROUP.Resource_GRP_alias||' is not unique for Resource Group : ' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME ||' : '|| SQLERRM );
+                  vv_err_message :='Alias: ' ||R_RESOURCE_GROUP.Resource_GRP_alias||' is not unique for Resource Group : ' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME ; --Error Message
+                  vv_error_flag_GRP  := 'E';
+                  vn_error_count := vn_error_count+1;
+                  XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                END IF;
+              ELSE
+                VV_RSRC_GRP_ALIAS := VV_OLD_ALIAS;
+              END IF;
+  
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Alias is  (VV_RSRC_GRP_ALIAS): ' ||VV_RSRC_GRP_ALIAS);
+              
+			  IF UPPER(R_RESOURCE_GROUP.RESOURCE_GRP_CNTRL_LEVEL)   ='NONE' THEN
+                VV_RSRC_GRP_CNTR_LEVEL                             :='N';
+              ELSIF UPPER(R_RESOURCE_GROUP.RESOURCE_GRP_CNTRL_LEVEL)='ABSOLUTE' THEN
+                VV_RSRC_GRP_CNTR_LEVEL                             :='B';
+              ELSIF UPPER(R_RESOURCE_GROUP.RESOURCE_GRP_CNTRL_LEVEL)='ADVISORY' THEN
+                VV_RSRC_GRP_CNTR_LEVEL                             :='A';
+              ELSE
+                VV_RSRC_GRP_CNTR_LEVEL := 'N';
+              END IF;
+              
+			  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_OLD_SORT_ORDER: ' ||VV_OLD_SORT_ORDER);
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'R_RESOURCE_GROUP.RESOURCE_GRP_ORDER ' ||R_RESOURCE_GROUP.RESOURCE_GRP_ORDER);
+              IF NVL(VV_OLD_SORT_ORDER,'9999') <> R_RESOURCE_GROUP.RESOURCE_GRP_ORDER THEN
+                BEGIN
+                  SELECT Resource_List_Member_Id
+                  INTO VN_ORDER_EXISTS
+                  FROM pa_parent_resources_v
+                  WHERE Resource_List_Id = VN_Resource_list_id
+                  AND Sort_order         = R_RESOURCE_GROUP.RESOURCE_GRP_ORDER;
+                EXCEPTION
+                WHEN OTHERS THEN
+                  VN_ORDER_EXISTS := NULL;
+                END;
+                IF VN_ORDER_EXISTS        IS NULL AND R_RESOURCE_GROUP.RESOURCE_GRP_ORDER IS NOT NULL THEN
+                  VV_Resource_Group_order := R_RESOURCE_GROUP.RESOURCE_GRP_ORDER;
+                  vv_error_flag_GRP  := 'E';
+                ELSE
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Order: '|| R_RESOURCE_GROUP.RESOURCE_GRP_ORDER ||' is not unique for resource group: ' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME ||' : '|| SQLERRM );
+                  vv_err_message :='Order: '|| R_RESOURCE_GROUP.RESOURCE_GRP_ORDER ||' is not unique for resource group: ' || R_RESOURCE_GROUP.RESOURCE_GROUP_NAME ; --Error Message
+                  vn_error_count := vn_error_count+1;
+                  XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                END IF;
+              ELSE
+                VV_Resource_Group_order:= VV_OLD_SORT_ORDER;
+              END IF;
+			 
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group order (VV_Resource_Group_order): ' ||VV_Resource_Group_order);
+             
+			  IF VV_RSRC_GRP_NAME IS NULL  THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group Name: '|| VV_RSRC_GRP_NAME || ' Cannot be null');
+				vv_err_message := 'Resource Group Name: '|| VV_RSRC_GRP_NAME  ||' cannot be null'; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+			  END IF;
+
+			  IF VV_RSRC_GRP_ALIAS IS NULL THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group Alias: '|| VV_RSRC_GRP_ALIAS || 'Cannot be null.' );
+				vv_err_message := 'Resource Group Alias: '|| VV_RSRC_GRP_ALIAS  ||'cannot be null'; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+			  END IF;			  
+
+			  IF VV_Resource_Group_order IS NULL THEN
+				FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group Order: '|| VV_Resource_Group_order || 'Cannot be null');
+				vv_err_message := 'Resource Group Order: '|| VV_Resource_Group_order  ||'cannot be null'; --Error Message
+				vv_error_flag_GRP  := 'E';
+				vn_error_count := vn_error_count+1;
+				XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+			  END IF;
+			  
+			  IF UPPER(NVL(R_RESOURCE_GROUP.RESOURCE_GRP_Enable_FLAG,'N')) IN ('YES', 'NO', 'Y', 'N') THEN
+                SELECT UPPER(SUBSTR (NVL (R_RESOURCE_GROUP.RESOURCE_GRP_Enable_FLAG, 'N'), 1, 1))
+                INTO VV_RESOURCE_GRP_Enable_FLAG
+                FROM DUAL;
+                FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_RESOURCE_GRP_Enable_FLAG:  ' || VV_RESOURCE_GRP_Enable_FLAG);
+              ELSE
+                FND_FILE.PUT_LINE(FND_FILE.LOG, 'Enable Flag Value' || R_RESOURCE_GROUP.RESOURCE_GRP_Enable_FLAG|| 'is incorrect' ||SQLERRM);
+                vv_err_message := 'Enable Flag Value' || R_RESOURCE_GROUP.RESOURCE_GRP_Enable_FLAG|| 'is incorrect';--Error Message
+                vv_error_flag_GRP  := 'E';
+                vn_error_count := vn_error_count+1;
+                XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+              END IF;
+              /*
+              Begin
+              Select
+              Res_Format_Id,
+              Resource_Class_Id
+              Into
+              vv_Res_Format_Id,
+              vv_Resource_Class_Id
+              From
+              Pa_ResType_Map_To_ResFormat
+              Where
+              upper(group_res_type_code) = upper(GROUP_RESOURCES_BY)
+              And    res_type_code = RESOURCE_GROUP_NAME
+              And    labor_flag = VV_track_as_labor_flag;
+              Select
+              migration_code,
+              resource_list_member_id
+              Into
+              VV_Migration_Code,
+              VV_Resource_List_Mem_Id
+              From
+              pa_resource_list_members
+              Where
+              resource_list_Id = VN_Resource_list_id
+              And    res_format_id = vv_Res_Format_Id
+              And nvl(organization_id, -99) = nvl(l_org_id, -99)
+              And nvl(job_id, -99) = nvl(:Child_Resources.job_id, -99)
+              And nvl(expenditure_type,'DUMMY') = nvl(p_exp_type, 'DUMMY')
+              And nvl(event_type, 'DUMMY') = nvl(p_event_type, 'DUMMY')
+              And nvl(expenditure_category, 'DUMMY') = nvl(l_exp_cat,'DUMMY')
+              And nvl(revenue_category, 'DUMMY') = nvl(l_rev_cat, 'DUMMY')
+              And nvl(object_type,'DUMMY') = nvl(p_object_type,'DUMMY')
+              And nvl(object_id,-99) = nvl(p_object_id,-99);
+              X_Exists_Flag := 'Y';
+              Exception
+              When No_Data_Found Then
+              X_Migration_Code := NULL;
+              X_Resource_List_Mem_id := NULL;
+              X_Exists_Flag := 'N';
+              End;
+              */
+              FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_EXISTS_RSRC_GRP' ||VV_EXISTS_RSRC_GRP);
+              IF VV_EXISTS_RSRC_GRP IS NULL THEN
+                IF P_MODE IN ('C','B') THEN -- MODE_CHECK_P
+                  BEGIN
+                    SELECT pa_resource_list_members_s.nextval
+                    INTO VN_Resource_list_member_id
+                    FROM dual;
+                  EXCEPTION
+                  WHEN OTHERS THEN
+                    vn_error_count := vn_error_count+1;
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error Fetching Sequence for Parent Resource' ||SQLERRM);
+                    vv_err_message := 'Error Fetching Sequence for Parent Resource. Please contact your system Administrator'; --Error Message
+                    vv_error_flag_GRP  := 'E';
+                    XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                  END;
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VN_Resource_list_member_id:  ' || VN_Resource_list_member_id);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'vn_resource_list_id:  ' || vn_resource_list_id);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'vn_resource_grp_id:  ' || vn_resource_grp_id);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_RSRC_GRP_ALIAS:  ' || VV_RSRC_GRP_ALIAS);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_Resource_Group_order:  ' || VV_Resource_Group_order);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_RESOURCE_GRP_Enable_FLAG:  ' || VV_RESOURCE_GRP_Enable_FLAG);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_track_as_labor_flag:  ' || VV_track_as_labor_flag);
+                  FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_RSRC_GRP_CNTR_LEVEL:  ' || VV_RSRC_GRP_CNTR_LEVEL);
+                  BEGIN
+                    fnd_file.put_line(fnd_file.log,'Resrouce Group Insert vv_error_flag_GRP' || vv_error_flag_GRP);
+                    IF vv_error_flag_GRP ='E' THEN
+						UPDATE XXSAT_PA_BUD_RESOURCE_LST
+						SET RESOURCE_GROUP_STATUS='E'
+						WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+						AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                    ELSE
+                      Pa_Resource_list_Pkg.Insert_parent_row (l_rowid, VN_Resource_list_member_id, vn_resource_list_id, nvl(vn_resource_grp_id,VN_Parent_Resource_id), VV_RSRC_GRP_ALIAS, VV_Resource_Group_order, 1, 'Y', VV_RESOURCE_GRP_Enable_FLAG, VV_track_as_labor_flag, gc_created_by, sysdate, sysdate, gc_created_by, gc_login_id, VV_RSRC_GRP_CNTR_LEVEL, NULL);
+                      fnd_file.put_line(fnd_file.log,' Resrouce Group '||R_RESOURCE_GROUP.RESOURCE_GROUP_NAME||' Inserted Successfully');
+                      V_RSRC_GRP_INSERT_SUCC :='Y';
+                      UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                      SET RESOURCE_GROUP_STATUS='Y'
+                      WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                      AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                    END IF;
+                  EXCEPTION
+                  WHEN OTHERS THEN
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error in Create API For Parent, Error: ' ||SQLERRM);
+                    vv_err_message := 'Unexpected Error in Create API for Parent, Please check the logs for more information'; --Error Message
+                    vv_error_flag_GRP  := 'E';
+                    vn_error_count := vn_error_count+1;
+                    XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    fnd_file.put_line(fnd_file.log,' Resource Group API in ERROR for Create');
+                    UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                    SET RESOURCE_GROUP_STATUS='E'
+                    WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                    AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                  END;
+                END IF;
+              ELSE --VV_EXISTS_RSRC_GRP
+                -- Update
+                IF P_MODE IN ('U','B') THEN 
+                  BEGIN
+                    fnd_file.put_line(fnd_file.log,' Inside Update API ');
+                    fnd_file.put_line(fnd_file.log,' l_row_id is : ' || l_row_id);
+                    fnd_file.put_line(fnd_file.log,' Resource Group Update vv_error_flag_GRP : ' || vv_error_flag_GRP);
+                    IF vv_error_flag_GRP ='E'THEN
+                      UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                      SET RESOURCE_GROUP_STATUS='E'
+                      WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                      AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                    ELSE
+                      Pa_Resource_list_Pkg.Update_Parent_Row (l_row_id, VN_Resource_list_member_id, VV_RSRC_GRP_ALIAS, VV_Resource_Group_order, 1, 'Y', VV_RESOURCE_GRP_Enable_FLAG, VV_track_as_labor_flag, gc_created_by, sysdate, gc_login_id, VV_RSRC_GRP_CNTR_LEVEL, NULL);
+                      V_RSRC_GRP_UPD_SUCC :='Y';
+                      fnd_file.put_line(fnd_file.log,' Resource Group update API Successful ');
+                      UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                      SET RESOURCE_GROUP_STATUS='Y'
+                      WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                      AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                    END IF;
+                  EXCEPTION
+                  WHEN OTHERS THEN
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Update API For Parent, Please check the Output file for more information' ||SQLERRM);
+                    vv_err_message := 'Unexpected Error in Update API for Parent, Please check the logs for more information' ||SQLERRM; --Error Message
+                    vv_error_flag_GRP  := 'E';
+                    vn_error_count := vn_error_count+1;
+                    XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                    fnd_file.put_line(fnd_file.log,'Resource Group update API in ERROR');
+                    UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                    SET RESOURCE_GROUP_STATUS='E'
+                    AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+                  END;
+                ELSE
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Resource Group already Exists. Kindly execute the program for Update mode to correct data.');
+                    vv_err_message := 'Unexpected Error in Update API for Parent, Please check the logs for more information'; --Error Message
+                    vv_error_flag_GRP  := 'E';
+                    vn_error_count := vn_error_count+1;
+                    XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    fnd_file.put_line(fnd_file.log,'Resource Group update API in ERROR');
+                    UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                    SET RESOURCE_GROUP_STATUS='S'
+                    WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                    AND RESOURCE_GROUP_NAME  =R_RESOURCE_GROUP.RESOURCE_GROUP_NAME;
+				
+				END IF; --('U,B')
+              END IF;   -- VV_EXISTS_RSRC_GRP
+              --END LOOP;
+            ELSE --PARENT_DATA
+              fnd_file.put_line(fnd_file.log,'Parent Data not provided. Skipped Parent and Child processing');
+            END IF; -- PARENT_DATA-- Check if resource group data is provided
+			  --3rd loop
+              fnd_file.put_line(fnd_file.log,' VN_group_resource_type_id:  ' ||VN_group_resource_type_id );
+			  fnd_file.put_line(fnd_file.log,' V_RSRC_GRP_INSERT_SUCC:  ' ||V_RSRC_GRP_INSERT_SUCC );
+			  fnd_file.put_line(fnd_file.log,' V_RSRC_GRP_UPD_SUCC:  ' ||V_RSRC_GRP_UPD_SUCC );
+			  fnd_file.put_line(fnd_file.log,' VV_EXISTS_RSRC_GRP:  ' ||VV_EXISTS_RSRC_GRP );
+			<<SKIP_PARENT>>               
+			fnd_file.put_line(fnd_file.log,'GOTO Processed');
+			  IF V_RSRC_GRP_INSERT_SUCC ='Y' OR V_RSRC_GRP_UPD_SUCC='Y' OR VV_EXISTS_RSRC_GRP IS NOT NULL OR VV_PARENT_SKIPPED ='Y' THEN -- CHILD_START
+				FOR R_CHILD_RESOURCE IN C_CHILD_RESOURCE(R_RESOURCE_LIST.Resource_list,R_RESOURCE_GROUP.RESOURCE_GROUP_NAME)
+                LOOP -- CHILD_loop
+                child_reset_variables();
+                  IF R_CHILD_RESOURCE.RESOURCE_NAME IS NOT NULL THEN -- NAME_NOT_NULL
+                    fnd_file.put_line(fnd_file.log,' R_CHILD_RESOURCE.RESOURCE_TYPE ' ||R_CHILD_RESOURCE.RESOURCE_TYPE );
+                    fnd_file.put_line(fnd_file.log,' R_CHILD_RESOURCE.RESOURCE_NAME ' ||R_CHILD_RESOURCE.RESOURCE_NAME );
+                    fnd_file.put_line(fnd_file.log,' VV_RSRC_GRP_NAME ' ||VV_RSRC_GRP_NAME );
+                    fnd_file.put_line(fnd_file.log,' R_RESOURCE_LIST.Resource_list ' ||R_RESOURCE_LIST.Resource_list );
+                    IF VN_group_resource_type_id=0 THEN
+						BEGIN
+						  SELECT 'EXISTS',
+							RESOURCE_ID,
+							ALIAS,
+							SORT_ORDER,
+							rowid
+						  INTO VV_EXISTS_CHILD_GRP,
+							vn_resource_id,
+							VV_OLD_C_ALIAS,
+							VV_OLD_C_SORT_ORDER,
+							l_c_row_id
+						  FROM PA_CHILD_RESOURCES_V
+						  WHERE UPPER(RESOURCE_NAME)       =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME)
+							AND RESOURCE_LIST_ID             =
+							  (SELECT RESOURCE_LIST_ID
+							  FROM PA_RESOURCE_LISTS
+							  WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+							  );
+						EXCEPTION
+						WHEN OTHERS THEN
+						  VV_EXISTS_CHILD_GRP := NULL;
+						  vn_resource_id      := NULL;
+						END;
+					ELSE
+						BEGIN
+						  SELECT 'EXISTS',
+							RESOURCE_ID,
+							ALIAS,
+							SORT_ORDER,
+							rowid
+						  INTO VV_EXISTS_CHILD_GRP,
+							vn_resource_id,
+							VV_OLD_C_ALIAS,
+							VV_OLD_C_SORT_ORDER,
+							l_c_row_id
+						  FROM PA_CHILD_RESOURCES_V
+						  WHERE UPPER(RESOURCE_TYPE_NAME)=UPPER(R_CHILD_RESOURCE.RESOURCE_TYPE)
+						  AND UPPER(RESOURCE_NAME)       =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME)
+						  AND PARENT_MEMBER_ID           =
+							(SELECT RESOURCE_LIST_MEMBER_ID
+							FROM PA_RESOURCE_LIST_MEMBERS
+							WHERE UPPER(EXPENDITURE_CATEGORY)=UPPER(VV_RSRC_GRP_NAME)
+							AND RESOURCE_LIST_ID             =
+							  (SELECT RESOURCE_LIST_ID
+							  FROM PA_RESOURCE_LISTS
+							  WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+							  )
+							);
+						EXCEPTION
+						WHEN OTHERS THEN
+						  VV_EXISTS_CHILD_GRP := NULL;
+						  vn_resource_id      := NULL;
+						END;
+					END IF;
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_EXISTS_CHILD_GRP' || VV_EXISTS_CHILD_GRP);
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'vn_resource_id' || vn_resource_id);
+                    BEGIN
+                      SELECT resource_type_name,
+                        resource_type_id
+                      INTO vv_c_resource_type_name,
+                        vv_c_resource_type_id
+                      FROM pa_resource_types_active_v
+                      WHERE resource_class_code     IN ('USER_DEFINED','PRE_DEFINED')
+                      AND resource_type_code        <> 'PROJECT_ROLE'
+                      AND UPPER(RESOURCE_TYPE_NAME)  =UPPER(R_CHILD_RESOURCE.RESOURCE_TYPE);
+                      AND ((VN_job_group_id         IS NULL
+                      AND upper(resource_type_name) <> 'JOB')
+                      OR (VN_job_group_id           IS NOT NULL))
+                    EXCEPTION
+                    WHEN OTHERS THEN
+                      FND_FILE.PUT_LINE(FND_FILE.LOG, 'Invalid Resource type :' || R_CHILD_RESOURCE.RESOURCE_TYPE || SQLERRM);
+                      vv_err_message := 'Resource type: ' || R_CHILD_RESOURCE.RESOURCE_TYPE ||' is Invalid.'; --Error Message
+                      vv_error_flag_C  := 'E';
+                      vn_error_count := vn_error_count+1;
+                      XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    END;
+                    BEGIN
+                      IF UPPER(vv_c_resource_type_name)='EMPLOYEE' THEN
+                        SELECT employee_name,
+                          person_id,
+                          track_as_labor_flag,
+                          unit_of_measure,
+                          rollup_quantity_flag,
+                          person_type,
+                          employee_number
+                        INTO vv_c_employee_name,
+                          vn_c_person_id,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag,
+                          vv_c_person_type,
+                          vn_c_employee_number
+                        FROM pa_employees_res_v
+                        WHERE UPPER(employee_name)        =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      ELSIF UPPER(vv_c_resource_type_name)='EVENT TYPE' THEN
+                        SELECT event_type ,
+                          track_as_labor_flag ,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_c_event_type,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_event_types_res_v
+                        WHERE UPPER(event_type)           =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      ELSIF UPPER(vv_c_resource_type_name)='EXPENDITURE TYPE' THEN
+                        SELECT expenditure_type,
+                          track_as_labor_flag,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_v_expenditure_type,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_expenditure_types_res_v
+                        WHERE UPPER(expenditure_type)     =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      ELSIF UPPER(vv_c_resource_type_name)='JOB' THEN
+                        SELECT job_name,
+                          job_id,
+                          track_as_labor_flag,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_c_job_name,
+                          vv_c_job_id,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_jobs_res_v
+                        WHERE job_group_id                = vn_job_group_id;
+                      ELSIF UPPER(vv_c_resource_type_name)='ORGANIZATION' THEN
+                        SELECT DISTINCT organization_name,
+                          organization_id,
+                          track_as_labor_flag,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_c_organization_name,
+                          vv_c_organization_id,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_organizations_res_v
+                        WHERE UPPER(organization_name)    =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      ELSIF UPPER(vv_c_resource_type_name)='REVENUE_CATEGORY' THEN
+                        SELECT revenue_category_code,
+                          track_as_labor_flag ,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_c_revenue_category_code,
+                          vv_c_track_as_labor_flag,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_revenue_categories_res_v
+                        WHERE UPPER(revenue_category_code)=UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      ELSIF UPPER(vv_c_resource_type_name)='SUPPLIER' THEN
+                        SELECT vendor_name,
+                          vendor_id,
+                          track_as_labor_flag,
+                          vv_c_vendor_id,
+                          unit_of_measure,
+                          rollup_quantity_flag
+                        INTO vv_c_vendor_name,
+                          vv_c_track_as_labor_flag ,
+                          vv_c_unit_of_measure,
+                          vv_c_rollup_quantity_flag
+                        FROM pa_vendors_res_v
+                        WHERE UPPER(vendor_name)=UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+						ELSIF UPPER(vv_c_resource_type_name)='EXPENDITURE CATEGORY' THEN
+						SELECT expenditure_category,
+							track_as_labor_flag , --expenditure_category resource_name,
+							unit_of_measure,
+							rollup_quantity_flag
+						  INTO VV_C_expenditure_category,
+							vv_c_track_as_labor_flag,
+							vv_c_unit_of_measure,
+							vv_c_rollup_quantity_flag
+						  FROM pa_expend_categories_res_v
+						  WHERE UPPER(expenditure_category)=UPPER(R_CHILD_RESOURCE.Resource_name)
+						  ORDER BY 1 ;
+					  ELSE
+                      FND_FILE.PUT_LINE(FND_FILE.LOG, 'Kindly use a valid Resource Type Value.');
+                      vv_err_message := 'Invalid Resource Type Name:' || R_CHILD_RESOURCE.RESOURCE_NAME; --Error Message
+                      vv_error_flag_C  := 'E';
+                      vn_error_count := vn_error_count+1;
+                      XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                      END IF;
+                    EXCEPTION
+                    WHEN OTHERS THEN
+                      FND_FILE.PUT_LINE(FND_FILE.LOG, 'Invalid Resource Name ' || R_CHILD_RESOURCE.RESOURCE_NAME ||' Error: '|| SQLERRM);
+                      vv_err_message := 'Error validating Resource Name' || R_CHILD_RESOURCE.RESOURCE_TYPE|| '. Please refer to logs or contact your System Administrator.'; --Error Message
+                      vv_error_flag_C  := 'E';
+                      vn_error_count := vn_error_count+1;
+                      XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    END;
+                    IF vn_resource_id IS NULL THEN
+                      BEGIN
+                        SELECT resource_id
+                        INTO VN_RESOURCE_EXISTS
+                        FROM pa_resources
+                        WHERE RESOURCE_TYPE_ID=vv_c_resource_type_id
+                        AND UPPER(NAME)       =UPPER(R_CHILD_RESOURCE.RESOURCE_NAME);
+                      EXCEPTION
+                      WHEN OTHERS THEN
+                        NULL;
+                      END ;
+                      IF VN_RESOURCE_EXISTS IS NULL THEN
+                        BEGIN
+                          fnd_file.put_line(fnd_file.log,' Inserting a new CHILD Resource');
+                          SELECT PA_RESOURCES_S.NEXTVAL INTO vn_resource_id FROM dual;
+                          FND_FILE.PUT_LINE(FND_FILE.LOG, 'New Resource ID for Child is: ' || VN_Parent_Resource_id );			
+                          INSERT
+                          INTO PA_RESOURCES
+                            (
+                              RESOURCE_ID,
+                              NAME,
+                              DESCRIPTION,
+                              RESOURCE_TYPE_ID,
+                              UNIT_OF_MEASURE,
+                              ROLLUP_QUANTITY_FLAG,
+                              START_DATE_ACTIVE,
+                              END_DATE_ACTIVE,
+                              TRACK_AS_LABOR_FLAG,
+                              LAST_UPDATE_DATE,
+                              LAST_UPDATED_BY,
+                              CREATION_DATE,
+                              CREATED_BY,
+                              LAST_UPDATE_LOGIN,
+                              ATTRIBUTE_CATEGORY,
+                              ATTRIBUTE1
+                            )
+                            VALUES
+                              R_CHILD_RESOURCE.Resource_NAME,
+                            (
+                              vn_resource_id,
+                              R_CHILD_RESOURCE.Resource_NAME,
+                              vv_c_resource_type_id,
+                              vv_c_unit_of_measure,
+                              vv_c_rollup_quantity_flag,
+                              TRUNC(Sysdate),
+                              NULL,-- END DATE
+                              vv_c_track_as_labor_flag,
+                              sysdate,
+                              gc_created_by,
+                              sysdate,
+                              gc_created_by,
+                              gc_login_id,
+                              NULL,
+                              NULL
+                            );
+														Insert_Res_Txn_Attr (vv_c_resource_type_name,
+							  R_CHILD_RESOURCE.Resource_NAME,
+							  vn_resource_id);
+                        EXCEPTION
+                        WHEN OTHERS THEN
+                          FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error ` new child resource : ' || R_CHILD_RESOURCE.RESOURCE_NAME ||' : '|| SQLERRM );
+                          vv_err_message := 'Error inserting new resource : ' || R_CHILD_RESOURCE.RESOURCE_NAME ; --Error Message
+                          vv_error_flag_C  := 'E';
+                          vn_error_count := vn_error_count+1;
+                          XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                        END;
+                      ELSE
+                        vn_resource_id := VN_RESOURCE_EXISTS;
+                      END IF; -- VN_RESOURCE_EXISTS is null
+                    END IF;   -- vn_resource_id is null THEN
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'CHILD: OLD Alias ' || VV_OLD_C_ALIAS);
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'CHILD New Alias ' || R_CHILD_RESOURCE.RESOURCE_ALIAS);
+					
+					IF VN_group_resource_type_id=0 THEN
+					BEGIN
+							SELECT Resource_List_Member_Id
+							INTO vn_c_exists_alias
+							FROM pa_resource_list_members
+							WHERE Upper(ALIAS)   = Upper(R_CHILD_RESOURCE.RESOURCE_ALIAS)
+							  AND Resource_List_Id             =
+								(SELECT RESOURCE_LIST_ID
+								FROM PA_RESOURCE_LISTS
+								WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+								);
+						  EXCEPTION
+						  WHEN NO_DATA_FOUND THEN
+						  VV_RSRC_C_ALIAS    := R_CHILD_RESOURCE.RESOURCE_ALIAS;
+						  WHEN OTHERS THEN
+							FND_FILE.PUT_LINE(FND_FILE.LOG, 'Alias:'|| R_CHILD_RESOURCE.RESOURCE_ALIAS || 'for Child(None) resource is not unique '|| SQLERRM );
+							vv_err_message := 'Alias:'|| R_CHILD_RESOURCE.RESOURCE_ALIAS || 'for Child resource is not unique for'||R_RESOURCE_LIST.Resource_list; --Error Message
+							vv_error_flag_C  := 'E';
+							vn_error_count := vn_error_count+1;
+							XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+							END;
+					ELSE
+						IF NVL(VV_OLD_C_ALIAS,'X') <> R_CHILD_RESOURCE.RESOURCE_ALIAS THEN
+						  BEGIN
+							SELECT Resource_List_Member_Id
+							INTO vn_c_exists_alias
+							FROM pa_resource_list_members
+							WHERE Upper(ALIAS)   = Upper(R_CHILD_RESOURCE.RESOURCE_ALIAS)
+							AND Parent_Member_Id =
+							  (SELECT RESOURCE_LIST_MEMBER_ID
+							  FROM PA_RESOURCE_LIST_MEMBERS
+							  WHERE UPPER(NVL(EXPENDITURE_CATEGORY,'X'))=UPPER(NVL(VV_RSRC_GRP_NAME,'X'))
+							  AND Resource_List_Id             =
+								(SELECT RESOURCE_LIST_ID
+								FROM PA_RESOURCE_LISTS
+								WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+								)
+							  );
+						  EXCEPTION
+						  WHEN OTHERS THEN
+							vn_c_exists_alias:= NULL;
+						  END;
+						  IF vn_c_exists_alias IS NULL THEN
+							vv_err_message := 'Alias: '|| R_CHILD_RESOURCE.RESOURCE_ALIAS || 'for Child resource is not unique'; --Error Message
+							VV_RSRC_C_ALIAS    := R_CHILD_RESOURCE.RESOURCE_ALIAS;
+						  ELSE
+							FND_FILE.PUT_LINE(FND_FILE.LOG, 'Alias: '|| R_CHILD_RESOURCE.RESOURCE_ALIAS || 'for Child resource is not unique'|| SQLERRM );
+							vv_error_flag_C  := 'E';
+							vn_error_count := vn_error_count+1;
+							XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+						  END IF;
+						ELSE
+						  VV_RSRC_C_ALIAS :=VV_OLD_C_ALIAS;
+						END IF;
+                    END IF;
+					FND_FILE.PUT_LINE(FND_FILE.LOG, 'Final Alias - ' || VV_RSRC_C_ALIAS);
+                    IF UPPER(R_CHILD_RESOURCE.RESOURCE_CNTL_LEVEL)   ='NONE' THEN
+                      VV_RSRC_C_CNTR_LEVEL                          :='N';
+                    ELSIF UPPER(R_CHILD_RESOURCE.RESOURCE_CNTL_LEVEL)='ABSOLUTE' THEN
+                      VV_RSRC_C_CNTR_LEVEL                          :='B';
+                    ELSIF UPPER(R_CHILD_RESOURCE.RESOURCE_CNTL_LEVEL)='ADVISORY' THEN
+                      VV_RSRC_C_CNTR_LEVEL                          :='A';
+                    ELSE
+                      VV_RSRC_C_CNTR_LEVEL := 'N';
+                    END IF;
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_OLD_C_SORT_ORDER ' || VV_OLD_C_SORT_ORDER);
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'R_CHILD_RESOURCE.RESOURCE_ORDER ' || R_CHILD_RESOURCE.RESOURCE_ORDER);
+					IF VN_group_resource_type_id =0 THEN
+						BEGIN
+				        SELECT Resource_List_Member_Id
+                        INTO VN_C_ORDER_EXISTS
+                        FROM pa_resource_list_members
+                        WHERE Sort_order     = R_CHILD_RESOURCE.RESOURCE_ORDER
+                          AND Resource_List_Id             =
+                            (SELECT RESOURCE_LIST_ID
+                            FROM PA_RESOURCE_LISTS
+                            WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+                            );	
+						EXCEPTION
+						  WHEN NO_DATA_FOUND THEN
+						  VN_Resource_C_order := R_CHILD_RESOURCE.RESOURCE_ORDER;
+						  WHEN OTHERS THEN
+						  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Order: '|| R_CHILD_RESOURCE.RESOURCE_ORDER ||' is not unique for Child (None): ' || R_RESOURCE_LIST.Resource_list ||' : '|| SQLERRM );
+							vv_err_message := 'Order: '|| R_CHILD_RESOURCE.RESOURCE_ORDER ||' is not unique for Child: ' || R_RESOURCE_LIST.Resource_list; --Error Message
+							vv_error_flag_C  := 'E';
+							vn_error_count := vn_error_count+1;
+							XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+						END;	  
+                	ELSE
+						IF NVL(VV_OLD_C_SORT_ORDER,9999) <> R_CHILD_RESOURCE.RESOURCE_ORDER THEN
+						  BEGIN
+							SELECT Resource_List_Member_Id
+							INTO VN_C_ORDER_EXISTS
+							FROM pa_resource_list_members
+							WHERE Sort_order     = R_CHILD_RESOURCE.RESOURCE_ORDER
+							AND Parent_Member_Id =
+							  (SELECT RESOURCE_LIST_MEMBER_ID
+							  FROM PA_RESOURCE_LIST_MEMBERS
+							  WHERE UPPER(NVL(EXPENDITURE_CATEGORY,'X'))=UPPER(NVL(VV_RSRC_GRP_NAME,'X'))
+							  AND Resource_List_Id             =
+								(SELECT RESOURCE_LIST_ID
+								FROM PA_RESOURCE_LISTS
+								WHERE UPPER(NAME)= UPPER(R_RESOURCE_LIST.Resource_list)
+								)
+							  );
+						  EXCEPTION
+						  WHEN OTHERS THEN
+							VN_C_ORDER_EXISTS := NULL;
+						  END;
+						  IF VN_C_ORDER_EXISTS  IS NULL THEN
+							VN_Resource_C_order := R_CHILD_RESOURCE.RESOURCE_ORDER;
+						  ELSE
+						  FND_FILE.PUT_LINE(FND_FILE.LOG, 'Order: '|| R_CHILD_RESOURCE.RESOURCE_ORDER ||' is not unique for Child: ' || R_CHILD_RESOURCE.RESOURCE_NAME ||' : '|| SQLERRM );
+							vv_err_message := 'Order: '|| R_CHILD_RESOURCE.RESOURCE_ORDER ||' is not unique for Child: ' || R_CHILD_RESOURCE.RESOURCE_ORDER; --Error Message
+							vv_error_flag_C  := 'E';
+							vn_error_count := vn_error_count+1;
+							XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+						  END IF;
+						ELSE
+						  VN_Resource_C_order :=VV_OLD_C_SORT_ORDER;
+						END IF;
+					END IF;
+                    FND_FILE.PUT_LINE(FND_FILE.LOG, 'Final Order for Child ' || VN_Resource_C_order);
+                    IF UPPER(NVL(R_CHILD_RESOURCE.RESOURCE_ENABLE_FLAG,'N')) IN ('YES', 'NO', 'Y', 'N') THEN
+                      SELECT UPPER(SUBSTR (NVL (R_CHILD_RESOURCE.RESOURCE_ENABLE_FLAG, 'N'), 1, 1))
+                      INTO VV_RESOURCE_C_Enable_FLAG
+                      FROM DUAL;
+                      FND_FILE.PUT_LINE(FND_FILE.LOG, 'VV_RESOURCE_C_Enable_FLAG:  ' || VV_RESOURCE_C_Enable_FLAG);
+                    ELSE
+                      FND_FILE.PUT_LINE(FND_FILE.LOG, 'Enable Flag Value' || R_CHILD_RESOURCE.RESOURCE_ENABLE_FLAG|| 'is incorrect' ||SQLERRM);
+                      vv_err_message := 'Enable Flag Value' || R_CHILD_RESOURCE.RESOURCE_ENABLE_FLAG|| 'is incorrect';--Error Message
+                      vv_error_flag_C  := 'E';
+                      vn_error_count := vn_error_count+1;
+                      XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                    END IF;
+					
+						VN_Resource_list_member_id := Null;
+					
+					If vn_Group_Resource_Type_Id = 0  Then
+						vn_c_Member_Level := 1;
+					Else
+						vn_c_Member_Level:= 2;
+					End If;
+
+					If Nvl(vv_c_track_as_labor_flag,'N') = 'Y' Then
+
+					If vn_Group_Resource_Type_Id = 0  Then
+					vv_c_track_as_labor_flag := 'Y';
+					Else
+					If vv_track_as_labor_flag = 'Y' Then
+					vv_c_track_as_labor_flag  := 'Y';
+					Else
+					vv_c_track_as_labor_flag  := 'N';
+					End if;
+					End if;
+
+					Else
+
+					vv_c_track_as_labor_flag  := 'N';
+
+					End If;
+					
+					
+                    IF VV_EXISTS_CHILD_GRP IS NULL THEN --VV_EXISTS_CHILD_GRP
+                      IF P_MODE IN ('C','B') THEN --CHILD_MODE_C_B
+                        fnd_file.put_line(fnd_file.log,' CHILD Mode C or B');
+                        BEGIN
+                          SELECT pa_resource_list_members_s.nextval
+                          INTO VN_child_list_member_id
+                          FROM dual;
+                        EXCEPTION
+                        WHEN OTHERS THEN
+                          FND_FILE.PUT_LINE(FND_FILE.LOG, 'Error fetching sequence for Child' ||SQLERRM);
+                          vv_err_message := 'Error fetching sequence for Child' ||SQLERRM; --Error Message
+                          vv_error_flag_C  := 'E';
+                          vn_error_count := vn_error_count+1;
+                          XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                        END;
+                        --    BEGIN
+                        fnd_file.put_line(fnd_file.log,'Child Insert vv_error_flag ' || vv_error_flag_C);
+                        IF vv_error_flag_C='E' THEN
+                          UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                          SET CHILD_RESOURCE_STATUS='E'
+                          WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                          AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                          AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                        ELSE
+                          BEGIN
+                            Pa_Resource_List_Pkg.Insert_child_row (l_ROWID, VN_child_list_member_id, vn_resource_list_id, vn_resource_id, VV_RSRC_C_ALIAS, VN_Resource_list_member_id, VN_Resource_C_order, vn_c_Member_Level, 'Y', VV_RESOURCE_C_Enable_FLAG, vv_c_track_as_labor_flag, gc_created_by, sysdate, sysdate, gc_created_by, gc_login_id, VV_RSRC_C_CNTR_LEVEL);
+                            fnd_file.put_line(fnd_file.log,' API Successfull : CHILD' ||R_CHILD_RESOURCE.RESOURCE_NAME||'created Successfully');
+                            UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                            SET CHILD_RESOURCE_STATUS='Y'
+                            WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                            AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                            AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                          EXCEPTION
+                          WHEN OTHERS THEN
+                            FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Update API For Parent, Please check the Output file for more information' ||SQLERRM);
+                            vv_err_message := 'Unexpected Error in Update API for Parent, Please check the logs for more information' ||SQLERRM; --Error Message
+                            vv_error_flag_C  := 'E';
+                            vn_error_count := vn_error_count+1;
+                            XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                            fnd_file.put_line(fnd_file.log,' CHILD Insert API in ERROR');
+                            UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                            SET CHILD_RESOURCE_STATUS='E'
+                            WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                            AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                            AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                          END;
+                        END IF; -- vv_error_flag='E'
+                      END IF;   -- CHILD_MODE_C_B
+                    ELSE --VV_EXISTS_CHILD_GRP
+                      IF P_MODE IN ('U','B') THEN --CHILD_MODE_U_B
+                        fnd_file.put_line(fnd_file.log,' l_c_row_id' || l_c_row_id);
+                        fnd_file.put_line(fnd_file.log,' Parent member id' || vn_c_exists_alias);
+                        IF vv_error_flag_C ='E'THEN
+                          UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                          SET CHILD_RESOURCE_STATUS='E'
+                          WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                          AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                          AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                        ELSE
+                          BEGIN
+                            WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                            Pa_Resource_list_pkg.Update_child_Row (l_c_row_id, vn_c_exists_alias, VV_RSRC_C_ALIAS, VN_Resource_C_order, vn_c_Member_Level, 'Y', VV_RESOURCE_C_Enable_FLAG, vv_c_track_as_labor_flag, gc_created_by, sysdate, gc_login_id, VV_RSRC_C_CNTR_LEVEL );
+                            UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                            SET CHILD_RESOURCE_STATUS='Y'
+                            AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                            AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                          EXCEPTION
+                          WHEN OTHERS THEN
+                            FND_FILE.PUT_LINE(FND_FILE.LOG, 'Unexpected Error in Update API For Parent, Please check the Output file for more information' ||SQLERRM);
+                            vv_err_message := 'Unexpected Error in Update API for Parent, Please check the logs for more information' ||SQLERRM; --Error Message
+                            vv_error_flag_C  := 'E';
+                            vn_error_count := vn_error_count+1;
+                            XXSAT_EH_PKG_RPT.INSERT_DATA(vn_request_id, vn_error_count, vv_err_message, R_RESOURCE_LIST.Resource_list);
+                            fnd_file.put_line(fnd_file.log,' CHILD Update API in ERROR');
+                            UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                            SET CHILD_RESOURCE_STATUS='E'
+                            WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                            AND nvl(RESOURCE_GROUP_NAME,'X')  = nvl(R_RESOURCE_GROUP.RESOURCE_GROUP_NAME,'X')
+                            AND RESOURCE_NAME        =R_CHILD_RESOURCE.RESOURCE_NAME;
+                          END;
+                        END IF;-- IF no error for child
+                      END IF;  -- CHILD_MODE_U_B
+                    END IF;    --VV_EXISTS_CHILD_GRP
+                  ELSE --NAME_NOT_NULL
+                    fnd_file.put_line(fnd_file.log,'Child Data not provided.Skipped Child Processing');
+                  END IF; -- NAME_NOT_NULL-- Check if CHILD data is provided
+                END LOOP; -- CHILD_LOOP
+				ELSE
+                            UPDATE XXSAT_PA_BUD_RESOURCE_LST
+                            SET CHILD_RESOURCE_STATUS='E'
+                            WHERE Resource_list      =R_RESOURCE_LIST.Resource_list
+                            AND nvl(RESOURCE_GROUP_NAME,'X')  = VV_EXISTS_RSRC_GRP;
+							                    fnd_file.put_line(fnd_file.log,'Child Data skipped because of missing Parent');
+              END IF;     --CHILD_START-- IF Child loop should start
+              --END IF; -- Check if CHILD data is provided
+            --ELSE --PARENT_DATA
+            --  fnd_file.put_line(fnd_file.log,'Parent Data not provided. Skipped Parent and Child processing');
+            --END IF; -- PARENT_DATA-- Check if resource group data is provided
+          END LOOP; --PARENT_LOOP -- Added to check
+        ELSE        --If no resource list exists then error
+          fnd_file.put_line(fnd_file.log,'Resource List Doesnt Exists. Please Create a Resource List for the Resource Group');
+        END IF;-- CHECK if RSRC LIst exists
+        -- END IF; -- Check if resource group data is provided
+    END IF; -- COPY_FROM Nikunj
+    END LOOP; -- RESOURCE_LIST Nikunj
+    BEGIN
+      SELECT COUNT (*)
+      INTO vn_count_records
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name =P_FILE_NAME;
+    END;
+    BEGIN
+      SELECT COUNT(DISTINCT Resource_list)
+      INTO vn_rsrc_lst_count
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name    =P_FILE_NAME
+      AND RESOURCE_STATUS='Y';
+    END;
+    BEGIN
+      SELECT NVL(SUM(COUNT(DISTINCT RESOURCE_GROUP_NAME)),0)
+      INTO vn_rsrc_grp_count
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name          =P_FILE_NAME
+      AND RESOURCE_GROUP_STATUS='Y'
+      GROUP BY resource_list;
+    END;
+    BEGIN
+      SELECT NVL(SUM(COUNT(RESOURCE_NAME)),0)
+      INTO vn_rsrc_child_count
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name          =P_FILE_NAME
+      AND CHILD_RESOURCE_STATUS='Y'
+      GROUP BY RESOURCE_GROUP_NAME;
+    END;
+    BEGIN
+      SELECT COUNT (*)
+      INTO VN_ERROR_COUNT
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name         =P_FILE_NAME
+      AND (RESOURCE_STATUS    ='E'
+      OR RESOURCE_GROUP_STATUS='E'
+      OR CHILD_RESOURCE_STATUS='E');
+    END;
+
+    BEGIN
+      SELECT COUNT (*)
+      INTO VN_SUCCESS_COUNT
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name         =P_FILE_NAME
+      AND (RESOURCE_STATUS    ='Y'
+      AND RESOURCE_GROUP_STATUS='Y'
+      AND CHILD_RESOURCE_STATUS='Y');
+    END;	
+	
+    BEGIN
+      SELECT COUNT (1)
+      INTO vn_RSRC_GRP_skipped
+      FROM XXSAT_PA_BUD_RESOURCE_LST
+      WHERE file_name =P_FILE_NAME
+      AND RESOURCE_GROUP_STATUS='S';
+    END;
+    BEGIN
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      );
+      1,                                           -- Report Line Number
+      'Number of Records ',                        --label
+      vn_count_records                             -- COunt
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      2,                                           -- Report Line Number
+      'Number of Resource List Created',           --label
+      vn_rsrc_lst_count                            -- COunt
+      );
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      3,                                           -- Report Line Number
+      'Number of Resource Group Created',          --label
+      vn_rsrc_grp_count                            -- COunt
+      );
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      4,                                           -- Report Line Number
+      'Number of Child Resource Created',          --label
+      vn_rsrc_child_count                          -- COunt
+      );
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      5,                                           -- Report Line Number
+      'Number of Records in Error',                --label
+      VN_ERROR_COUNT                               -- COunt
+      );
+      XXSAT_EH_PKG_RPT.insert_stat (vn_request_id, -- Request Id
+      6,                                           -- Report Line Number
+      'Number of Total Records in Success',         --label
+      VN_SUCCESS_COUNT                               -- COunt
+      );	  
+      XXSAT_EH_GEN_RPT_PKG.DISPLAY_REPORT(vn_request_id);
+    END;
+    fnd_file.put_line(fnd_file.log,'VN_ERROR_COUNT');
+    IF VN_ERROR_COUNT >0 THEN
+      x_retcode      :=1;
+      x_errbuff      :=vv_err_message;
+      vb_return      := FND_CONCURRENT.SET_COMPLETION_STATUS('WARNING','');
+    END IF;
+  END;
+END XXSAT_PA_BUD_RESOURCE_LIST;

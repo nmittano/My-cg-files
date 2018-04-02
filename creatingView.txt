@@ -1,0 +1,42 @@
+ CREATE OR REPLACE FORCE VIEW "APPS"."XXSAT_AP_REPORT_ENTITY_V" ("DATA_DUMP", "SEQ") AS 
+  SELECT 'Operating Unit,Name,Location,Description,Tax ID Number,Values,Description' DATA_DUMP,1 SEQ
+FROM dual
+UNION
+
+SELECT
+		('"'||OOD.ORGANIZATION_NAME||'","'||
+		APRE.ENTITY_NAME||'","'||
+		HLA.LOCATION_CODE||'","'||
+		HLA.DESCRIPTION||'","'||
+		APRE.TAX_IDENTIFICATION_NUM||'","'||
+		AREL.BALANCING_SEGMENT_VALUE||'","'||
+		fnd_val.DESCRIPTION||'"')DATA_DUMP,2 SEQ
+FROM
+	fnd_segment_attribute_values fnd_seg, 
+	ap_system_parameters_all ap,
+	gl_sets_of_books gl,
+	fnd_id_flex_segments fnd_id, 
+	fnd_flex_value_sets fnd_val_sets,
+	fnd_flex_values_vl fnd_val,
+	AP_REPORTING_ENTITIES_ALL APRE,
+	ORG_ORGANIZATION_DEFINITIONS OOD,
+	HR_LOCATIONS_ALL_V HLA,
+	AP_REPORTING_ENTITY_LINES_ALL AREL
+WHERE
+			gl.set_of_books_id = ap.set_of_books_id
+    AND   	fnd_seg.attribute_value='Y'
+    AND   	fnd_seg.segment_attribute_type = 'GL_BALANCING'
+    AND   	fnd_seg.id_flex_code = 'GL#'
+    AND   	fnd_seg.id_flex_num = gl.chart_of_accounts_id
+    AND   	fnd_id.id_flex_code = 'GL#'
+    AND   	fnd_id.id_flex_num = fnd_seg.id_flex_num
+    AND   	fnd_id.application_column_name = fnd_seg.application_column_name
+    AND   	fnd_id.flex_value_set_id = fnd_val_sets.flex_value_set_id
+    AND   	fnd_val_sets.flex_value_set_id = fnd_val.flex_value_set_id
+    AND  	fnd_val.flex_value = AREL.BALANCING_SEGMENT_VALUE
+	AND 	OOD.ORGANIZATION_ID = APRE.ORG_ID
+    AND 	HLA.LOCATION_ID = APRE.LOCATION_ID
+    AND 	AREL.TAX_ENTITY_ID = APRE.TAX_ENTITY_ID
+    AND 	AREL.ORG_ID = OOD.ORGANIZATION_ID
+    AND 	ap.org_id = OOD.ORGANIZATION_ID
+ORDER BY SEQ;

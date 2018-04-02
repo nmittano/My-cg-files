@@ -1,0 +1,57 @@
+SELECT 
+      PRL.NAME                                      "Resource List",
+      PRL.DESCRIPTION                               "Description",
+      DECODE(PRL.JOB_GROUP_ID,'8','Vision Sweden')  "Job Group",
+      L1.MEANING                                    "Group Resources By",
+      TO_CHAR(PRL.START_DATE_ACTIVE,'DD-MON-YYY')   "From",
+      TO_CHAR(PRL.END_DATE_ACTIVE,'DD-MON-YYY')     "To",
+      (PRL.NAME||'   '||PRL.RESOURCE_LIST_ID)       "Copy From",
+      PPR.RESOURCE_NAME                             "Group",
+      PPR.ALIAS                                     "Alias",
+      L2.MEANING                                    "Control Levels",
+      PPR.SORT_ORDER                                "Order",
+      DECODE(PPR.ENABLED_FLAG,'Y','Yes','N','No')   "Enabled",
+      RT.NAME                                       "Resource Type",
+      pa_resources_pkg.get_resource_name(R.RESOURCE_ID,R.RESOURCE_TYPE_ID)   "Resource",
+      RLM.ALIAS                                     "Alias ",
+      L3.MEANING                                    "Control Level",
+      RLM.SORT_ORDER                                "Order ",
+      DECODE(RLM.ENABLED_FLAG,'Y','Yes','N','No')   "Enabled "   
+      
+FROM 
+     PA_RESOURCE_LISTS_V PRL,
+     PA_PARENT_RESOURCES_V PPR,
+     ---PA_CHILD_RESOURCES_V  PLR,
+     FND_LOOKUP_VALUES  L1,
+     FND_LOOKUP_VALUES  L2,
+     FND_LOOKUP_VALUES  L3,
+     PA_RESOURCE_LIST_MEMBERS RLM,
+     PA_RESOURCE_TYPES RT,
+     PA_RESOURCES R 
+     
+     
+WHERE 
+      (RLM.PARENT_MEMBER_ID IS NULL
+      OR RLM.PARENT_MEMBER_ID         = 0)
+      AND RLM.RESOURCE_ID             = R.RESOURCE_ID
+      AND RLM.RESOURCE_ID             = PPR.RESOURCE_ID
+      AND R.RESOURCE_TYPE_ID          = RT.RESOURCE_TYPE_ID
+      AND PRL.GROUP_RESOURCE_TYPE_ID  = PPR.RESOURCE_TYPE_ID(+)
+      AND PRL.RESOURCE_LIST_ID        = PPR.RESOURCE_LIST_ID(+)
+      AND L1.LOOKUP_CODE              = RLM.RESOURCE_TYPE_CODE
+      AND L1.LOOKUP_TYPE              IN ('PA_REP_UTIL_VIEW','RETENTION_LEVEL')
+      AND L1.LANGUAGE                 = USERENV('LANG')
+      AND L2.LOOKUP_CODE              = PPR.FUNDS_CONTROL_LEVEL_CODE
+      AND L2.LOOKUP_TYPE              = 'FUNDS_CONTROL_LEVEL_CODE'
+      AND L2.LANGUAGE                 = USERENV('LANG')
+      AND L3.LOOKUP_CODE              = PPR.FUNDS_CONTROL_LEVEL_CODE
+      AND L3.LOOKUP_TYPE              = 'FUNDS_CONTROL_LEVEL_CODE'
+      AND L3.LANGUAGE                 = USERENV('LANG')
+      AND (RLM.PARENT_MEMBER_ID IS NOT NULL
+      OR RLM.PARENT_MEMBER_ID     <> 0
+      OR EXISTS
+      (SELECT 'x'
+      FROM PA_RESOURCE_LISTS_V  PRL
+      WHERE PRL.RESOURCE_LIST_ID     = RLM.RESOURCE_LIST_ID
+      AND PRL.GROUP_RESOURCE_TYPE_ID = 0
+      ));

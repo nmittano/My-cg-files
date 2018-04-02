@@ -1,0 +1,55 @@
+SELECT
+
+  DISTINCT PROJ.SEGMENT1                                  Num,
+  PROJ.NAME                                               TEMPLATE_NAME ,
+  PROJ.PROJECT_TYPE                                       TYPE ,
+  ORG.NAME                                                ORGANIZATION_NAME ,
+  PROJ.LONG_NAME                                          LONG_NAME ,
+  PROJ.START_DATE                                         Trans_Duration_From ,
+  PROJ.COMPLETION_DATE                                    Trans_duration_To,
+  PROJ.PROJECT_STATUS_CODE                                STATUS ,
+  PROJ.DESCRIPTION                                        DESCRIPTION,
+  DECODE(PROJ.SUMMARY_FLAG,'Y','Yes','N','No')            WF_IN_PROGRESS ,
+  DECODE(PROJ.PUBLIC_SECTOR_FLAG,'Y','Yes','N','No')      PUBLIC_SECTOR ,
+  DECODE(PROJ.TEMPLATE_FLAG,'Y','Yes','N','No')           TEMPLATE_FLAG,
+  PROJ.TEMPLATE_START_DATE_ACTIVE                         TEMPLATE_DATE_FROM,
+  PROJ.TEMPLATE_END_DATE_ACTIVE                           TEMPLATE_DATE_TO,
+  PUUS.COST_CENTER_SEGMENT                                COST_CENTER,
+  PPFO.MARGIN_DERIVED_FROM_CODE                           MARGIN,
+  (PROJ.ATTRIBUTE_CATEGORY||' '||PROJ.ATTRIBUTE1||' '||PROJ.ATTRIBUTE2||' '||PROJ.ATTRIBUTE3||' '||PROJ.ATTRIBUTE4||' '||PROJ.ATTRIBUTE5||' '||PROJ.ATTRIBUTE6||' '||PROJ.ATTRIBUTE7||' '||PROJ.ATTRIBUTE8||' '||PROJ.ATTRIBUTE9||' '||PROJ.ATTRIBUTE10) Flex_Field
+ 
+  FROM HR_ORGANIZATION_UNITS      ORG,
+  PA_PROJECT_STATUSES             PS,
+  PA_PROJECT_STATUSES             PPSF ,
+  PA_LOOKUPS                      LK1,
+  PA_DISTRIBUTION_RULES           RULE,
+  PA_BILLING_CYCLES               BILL,
+  PA_PROJECT_TYPES_ALL            TYPE,
+  PA_PROJECTS_ALL                 PROJ,
+  HR_OPERATING_UNITS              POU,
+  PA_UBR_UER_SUMM_ACCT            PUUS,
+  PA_PROJ_FP_OPTIONS              PPFO
+                   
+WHERE 'Y' IN
+  (SELECT PA_SECURITY.ALLOW_QUERY(PROJ.PROJECT_ID) FROM SYS.DUAL
+  )
+AND PROJ.CARRYING_OUT_ORGANIZATION_ID = ORG.ORGANIZATION_ID
+AND PROJ.PROJECT_STATUS_CODE          = PS.PROJECT_STATUS_CODE
+AND PROJ.FUNDING_APPROVAL_STATUS_CODE = PPSF.PROJECT_STATUS_CODE (+)
+AND PROJ.PM_PRODUCT_CODE              = LK1.LOOKUP_CODE (+)
+AND LK1.LOOKUP_TYPE (+)               = 'PM_PRODUCT_CODE'
+AND PROJ.DISTRIBUTION_RULE            = RULE.DISTRIBUTION_RULE (+)
+AND PROJ.BILLING_CYCLE_ID             = BILL.BILLING_CYCLE_ID (+)
+AND PROJ.PROJECT_TYPE                 = TYPE.PROJECT_TYPE
+AND PS.STATUS_TYPE                    = 'PROJECT'
+AND TYPE.ORG_ID                       =PROJ.ORG_ID
+AND POU.ORGANIZATION_ID               = PROJ.ORG_ID
+AND PROJ.PROJECT_ID                   =PUUS.PROJECT_ID(+)
+AND PROJ.PROJECT_ID                   =PPFO.PROJECT_ID
+---AND PJG.BILL_JOB_GROUP_ID  =PROJ.PROJECT_ID
+---AND PJG.COST_JOB_GROUP_ID  =PROJ.PROJECT_ID
+---AND PUUS.PROJECT_ID                   = 'NOT NULL'
+---and PPFO.MARGIN_DERIVED_FROM_CODE        ='not null'
+AND exists (select '1' from pa_implementations_all imp where Imp.org_id = POU.organization_id )
+;
+
